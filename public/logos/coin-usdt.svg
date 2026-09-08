@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <title>USDT (BEP-20)</title>
+  <defs>
+    <radialGradient id="ubg" cx="50%" cy="42%" r="65%">
+      <stop offset="0%" stop-color="#1b5b31"/>
+      <stop offset="100%" stop-color="#0a2818"/>
+    </radialGradient>
+    <linearGradient id="uring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#26a17b"/>
+      <stop offset="100%" stop-color="#3ecf8e"/>
+    </linearGradient>
+  </defs>
+  <circle cx="100" cy="100" r="96" fill="url(#ubg)"/>
+  <circle cx="100" cy="100" r="92" fill="none" stroke="#3ecf8e" stroke-width="4"/>
+  <g fill="#3ecf8e">
+    <path d="M 62 78 L 138 78 L 138 122 L 62 122 Z" fill="#3ecf8e" opacity="0.25"/>
+    <rect x="66" y="82" width="68" height="36" rx="6" fill="#0c2818"/>
+    <text x="100" y="108" font-size="30" font-family="Arial, sans-serif" font-weight="700" fill="#3ecf8e" text-anchor="middle" dominant-baseline="middle">₮</text>
+  </g>
+  <text x="100" y="168" font-size="16" font-family="Arial, sans-serif" font-weight="600" fill="#eafff2" text-anchor="middle" dominant-baseline="middle">USDT</text>
+</svg>

@@ -118,11 +118,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   // Sync data when account is loaded
-  const refreshAccountData = useCallback((acc: WalletAccount) => {
-    const session = dbService.getMiningSession(acc.id);
+  const refreshAccountData = useCallback(async (acc: WalletAccount) => {
+    const session = await dbService.getMiningSession(acc.id);
     setMiningSession(session);
-    setTasks(dbService.getTasks(acc.id));
-    setTransactions(dbService.getTransactions(acc.id));
+    setTasks(await dbService.getTasks(acc.id));
+    setTransactions(await dbService.getTransactions(acc.id));
   }, []);
 
   useEffect(() => {
@@ -213,24 +213,20 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // --- Mining Handlers ---
-  const startMining = () => {
+  const startMining = async () => {
     if (!account) return;
-    const session = dbService.startMiningSession(
-      account.id, 
-      account.currentBoostPct, 
-      account.totalBoostReward
-    );
+    const session = await dbService.startMiningSession(account.id);
     setMiningSession(session);
-    addNotification('Mining Started', '12-hour session initiated at 4.16 Cooptoken/hour.', 'mining');
+    addNotification('Mining Started', '12-hour session initiated. Come back to claim your Cooptoken.', 'mining');
   };
 
   const claimMining = async (): Promise<number> => {
     if (!account || !miningSession) return 0;
     try {
-      const res = dbService.claimMiningSession(account, miningSession);
+      const res = await dbService.claimMiningSession(account, miningSession);
       setAccount({ ...res.wallet });
       setMiningSession(res.session);
-      setTransactions(dbService.getTransactions(account.id));
+      setTransactions(await dbService.getTransactions(res.wallet.id));
       addNotification('Mining Claimed', `Successfully claimed +${res.reward} Cooptoken!`, 'success');
       return res.reward;
     } catch (e: any) {
@@ -242,9 +238,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // --- Swap Handlers ---
   const executeSwap = async (cooptokenAmount: number): Promise<{ coopReceived: number }> => {
     if (!account) throw new Error('No active wallet');
-    const res = dbService.executeSwap(account, cooptokenAmount);
+    const res = await dbService.executeSwap(account, cooptokenAmount);
     setAccount({ ...res.wallet });
-    setTransactions(dbService.getTransactions(account.id));
+    setTransactions(await dbService.getTransactions(res.wallet.id));
     addNotification('Swap Completed', `Swapped ${cooptokenAmount} Cooptoken for +${res.coopReceived} COOP`, 'tx');
     return { coopReceived: res.coopReceived };
   };
@@ -252,9 +248,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // --- Send Handlers ---
   const executeSend = async (recipient: string, amount: number): Promise<{ fee: number }> => {
     if (!account) throw new Error('No active wallet');
-    const res = dbService.executeSend(account, recipient, amount);
+    const res = await dbService.executeSend(account, recipient, amount);
     setAccount({ ...res.wallet });
-    setTransactions(dbService.getTransactions(account.id));
+    setTransactions(await dbService.getTransactions(res.wallet.id));
     addNotification('Transfer Sent', `Sent ${amount} COOP to ${recipient.slice(0, 8)}...`, 'tx');
     return { fee: res.fee };
   };
@@ -265,20 +261,25 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const tier = BOOST_TIERS.find(t => t.id === tierId);
     if (!tier) return false;
 
-    const updated = dbService.purchaseBoost(account, tier);
-    setAccount({ ...updated });
-    refreshAccountData(updated);
-    addNotification('Boost Activated', `Purchased ${tier.name}! Added +${tier.rewardBonus} Cooptoken mining reward.`, 'success');
-    return true;
+    try {
+      const updated = await dbService.purchaseBoost(account, tier);
+      setAccount({ ...updated });
+      await refreshAccountData(updated);
+      addNotification('Boost Activated', `Purchased ${tier.name}! Added +${tier.rewardBonus} Cooptoken mining reward.`, 'success');
+      return true;
+    } catch (e: any) {
+      alert(e.message || 'Boost purchase failed');
+      return false;
+    }
   };
 
   // --- Task Handlers ---
   const claimTask = async (taskId: string): Promise<number> => {
     if (!account) return 0;
-    const res = dbService.claimTask(account, taskId);
+    const res = await dbService.claimTask(account, taskId);
     setAccount({ ...res.wallet });
     setTasks(res.tasks);
-    setTransactions(dbService.getTransactions(account.id));
+    setTransactions(await dbService.getTransactions(res.wallet.id));
     addNotification('Task Completed', `Earned +${res.reward} Cooptoken!`, 'success');
     return res.reward;
   };

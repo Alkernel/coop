@@ -96,8 +96,59 @@ export const BOOST_TIERS: BoostTier[] = [
   }
 ];
 
-// Persistent Database Layer (Simulated Server RPC + Cloud Supabase Bridge)
+// Persistent Database Layer (Supabase-first with offline localStorage fallback)
 class DatabaseService {
+  // --- DB row mappers ---
+  private walletFromDb(row: any, privateKey?: string): WalletAccount {
+    return {
+      id: row.id,
+      address: row.address,
+      privateKey: privateKey || '',
+      coopBalance: Number(row.coop_balance),
+      cooptokenBalance: Number(row.cooptoken_balance),
+      miningPowerLevel: row.mining_power_level ?? 1,
+      currentBoostPct: row.current_boost_pct ?? 0,
+      totalBoostReward: Number(row.total_boost_reward ?? 0),
+      totalSent: Number(row.total_sent ?? 0),
+      totalReceived: Number(row.total_received ?? 0),
+      pinCode: row.pin_code || '123456',
+      biometricsEnabled: row.biometrics_enabled ?? true,
+      notificationsEnabled: row.notifications_enabled ?? true,
+      autoLockMinutes: row.auto_lock_minutes ?? 5,
+      createdAt: row.created_at
+    };
+  }
+
+  private sessionFromDb(row: any): MiningSession {
+    return {
+      id: row.id,
+      walletId: row.wallet_id,
+      startTime: new Date(row.start_time).getTime(),
+      endTime: new Date(row.end_time).getTime(),
+      durationHours: row.duration_hours ?? 12,
+      baseReward: Number(row.base_reward ?? 50),
+      boostReward: Number(row.boost_reward ?? 0),
+      totalReward: Number(row.total_reward ?? 50),
+      status: row.status,
+      claimedAt: row.claimed_at ? new Date(row.claimed_at).getTime() : undefined
+    };
+  }
+
+  private txFromDb(row: any): Transaction {
+    return {
+      id: row.id,
+      txType: row.tx_type,
+      amount: Number(row.amount),
+      currency: row.currency,
+      counterparty: row.counterparty || '',
+      fee: Number(row.fee ?? 0),
+      status: row.status,
+      txHash: row.tx_hash,
+      notes: row.notes || undefined,
+      timestamp: new Date(row.created_at).getTime()
+    };
+  }
+
   private getStorage<T>(key: string, fallback: T): T {
     try {
       const data = localStorage.getItem(`coop_${key}`);
@@ -147,7 +198,7 @@ class DatabaseService {
       }
     }
 
-    // Local Server-side Simulation Engine
+    // Offline fallback (only used when Supabase is unreachable)
     const wallets = this.getStorage<Record<string, WalletAccount>>('wallets', {});
     const cleanKey = privateKey.trim().toLowerCase();
 
@@ -157,17 +208,18 @@ class DatabaseService {
 
     if (createIfNew) {
       const address = deriveAddressFromKey(privateKey);
+      // New accounts start with ZERO balances — everything is earned via mining & tasks
       const newWallet: WalletAccount = {
         id: 'w_' + Math.random().toString(36).substring(2, 9),
         address,
         privateKey,
-        coopBalance: 1234.56,      // Default matching mockup: $245.68 @ ~$0.199
-        cooptokenBalance: 450.00,   // Initial pre-TGE mining balance
+        coopBalance: 0,
+        cooptokenBalance: 0,
         miningPowerLevel: 1,
-        currentBoostPct: 15,       // +15% matching mockup
-        totalBoostReward: 8.32,
-        totalSent: 542.12,
-        totalReceived: 1876.45,
+        currentBoostPct: 0,
+        totalBoostReward: 0,
+        totalSent: 0,
+        totalReceived: 0,
         pinCode: '123456',
         biometricsEnabled: true,
         notificationsEnabled: true,
@@ -176,93 +228,66 @@ class DatabaseService {
       };
       wallets[cleanKey] = newWallet;
       this.setStorage('wallets', wallets);
-
-      // Seed initial transactions matching mockup Screen 8
-      const initialTx: Transaction[] = [
-        {
-          id: 'tx_1',
-          txType: 'receive',
-          amount: 50.00,
-          currency: 'COOP',
-          counterparty: '0x8b3...4e1a',
-          status: 'Complete',
-          txHash: '0x3a91...f02b',
-          timestamp: Date.now() - 1000 * 60 * 60 * 24 * 2
-        },
-        {
-          id: 'tx_2',
-          txType: 'send',
-          amount: 20.00,
-          currency: 'COOP',
-          counterparty: '0x4f1...9c8b',
-          fee: 0.02,
-          status: 'Complete',
-          txHash: '0x9c41...892e',
-          timestamp: Date.now() - 1000 * 60 * 60 * 24 * 4
-        },
-        {
-          id: 'tx_3',
-          txType: 'swap',
-          amount: 15.00,
-          currency: 'COOP',
-          counterparty: 'Coop Swap DEX',
-          fee: 0,
-          status: 'Complete',
-          txHash: '0x88f2...b13d',
-          timestamp: Date.now() - 1000 * 60 * 60 * 24 * 5
-        },
-        {
-          id: 'tx_4',
-          txType: 'receive',
-          amount: 30.00,
-          currency: 'COOP',
-          counterparty: '0x2c4...77ae',
-          status: 'Complete',
-          txHash: '0x12b9...55c1',
-          timestamp: Date.now() - 1000 * 60 * 60 * 24 * 6
-        },
-        {
-          id: 'tx_5',
-          txType: 'send',
-          amount: 10.00,
-          currency: 'COOP',
-          counterparty: '0x19a...ff30',
-          fee: 0.02,
-          status: 'Complete',
-          txHash: '0x71a2...999b',
-          timestamp: Date.now() - 1000 * 60 * 60 * 24 * 7
-        }
-      ];
-      this.setStorage(`txs_${newWallet.id}`, initialTx);
-
-      // Create initial active mining session
-      this.startMiningSession(newWallet.id, newWallet.currentBoostPct, newWallet.totalBoostReward);
-
       return newWallet;
     }
 
     return null;
   }
 
-  // Save modified wallet state
+  // Save modified wallet state (local cache + best-effort Supabase sync)
   saveWallet(wallet: WalletAccount): void {
     const wallets = this.getStorage<Record<string, WalletAccount>>('wallets', {});
     const cleanKey = wallet.privateKey.trim().toLowerCase();
     wallets[cleanKey] = wallet;
     this.setStorage('wallets', wallets);
-  }
 
-  // --- 2. MINING ENGINE (Server-side validation) ---
-  getMiningSession(walletId: string): MiningSession {
-    const key = `mining_${walletId}`;
-    let session = this.getStorage<MiningSession | null>(key, null);
-    if (!session) {
-      session = this.startMiningSession(walletId, 15, 8.32);
+    if (supabase && !wallet.id.startsWith('w_')) {
+      supabase.from('wallets').update({
+        coop_balance: wallet.coopBalance,
+        cooptoken_balance: wallet.cooptokenBalance,
+        mining_power_level: wallet.miningPowerLevel,
+        current_boost_pct: wallet.currentBoostPct,
+        total_boost_reward: wallet.totalBoostReward,
+        total_sent: wallet.totalSent,
+        total_received: wallet.totalReceived,
+        pin_code: wallet.pinCode,
+        biometrics_enabled: wallet.biometricsEnabled,
+        notifications_enabled: wallet.notificationsEnabled,
+        auto_lock_minutes: wallet.autoLockMinutes
+      }).eq('id', wallet.id).then(() => {});
     }
-    return session;
   }
 
-  startMiningSession(walletId: string, boostPct: number = 0, boostRewardBonus: number = 0): MiningSession {
+  // --- 2. MINING ENGINE (Supabase RPC-first, offline fallback) ---
+  async getMiningSession(walletId: string): Promise<MiningSession | null> {
+    if (supabase && !walletId.startsWith('w_')) {
+      try {
+        const { data, error } = await supabase
+          .from('mining_sessions')
+          .select('*')
+          .eq('wallet_id', walletId)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (!error && data && data.length > 0) {
+          return this.sessionFromDb(data[0]);
+        }
+        if (!error) return null; // real account with no session yet — user must press Start
+      } catch (e) {
+        console.warn('Supabase getMiningSession fallback:', e);
+      }
+    }
+    return this.getStorage<MiningSession | null>(`mining_${walletId}`, null);
+  }
+
+  async startMiningSession(walletId: string, boostPct: number = 0, boostRewardBonus: number = 0): Promise<MiningSession> {
+    if (supabase && !walletId.startsWith('w_')) {
+      try {
+        const { data, error } = await supabase.rpc('rpc_start_mining', { p_wallet_id: walletId });
+        if (!error && data) return this.sessionFromDb(data);
+      } catch (e) {
+        console.warn('Supabase rpc_start_mining fallback:', e);
+      }
+    }
     const now = Date.now();
     const duration = 12 * 60 * 60 * 1000; // 12 hours
     const baseReward = 50.00; // 50 Cooptoken per 12h
@@ -284,7 +309,26 @@ class DatabaseService {
     return session;
   }
 
-  claimMiningSession(wallet: WalletAccount, session: MiningSession): { wallet: WalletAccount; session: MiningSession; reward: number } {
+  async claimMiningSession(wallet: WalletAccount, session: MiningSession): Promise<{ wallet: WalletAccount; session: MiningSession; reward: number }> {
+    if (supabase && !wallet.id.startsWith('w_')) {
+      try {
+        const { data, error } = await supabase.rpc('rpc_claim_mining_reward', {
+          p_wallet_id: wallet.id,
+          p_session_id: session.id
+        });
+        if (!error && data) {
+          const claimedWallet = this.walletFromDb(data.wallet, wallet.privateKey);
+          const claimedSession: MiningSession = { ...session, status: 'claimed', claimedAt: Date.now() };
+          this.setStorage(`mining_${wallet.id}`, claimedSession);
+          return { wallet: claimedWallet, session: claimedSession, reward: Number(data.reward_claimed ?? session.totalReward) };
+        }
+        if (error) throw new Error(error.message);
+      } catch (e: any) {
+        throw new Error(e?.message || 'Failed to claim mining reward');
+      }
+    }
+
+    // Offline fallback
     if (session.status === 'claimed') {
       throw new Error('Reward already claimed');
     }
@@ -294,11 +338,9 @@ class DatabaseService {
     session.claimedAt = Date.now();
     this.setStorage(`mining_${wallet.id}`, session);
 
-    // Credit server-side balance
     wallet.cooptokenBalance = Number((wallet.cooptokenBalance + reward).toFixed(4));
     this.saveWallet(wallet);
 
-    // Record transaction
     this.addTransaction(wallet.id, {
       id: 'tx_' + Date.now(),
       txType: 'mining',
@@ -315,11 +357,30 @@ class DatabaseService {
     return { wallet, session, reward };
   }
 
-  // --- 3. SWAP (1,000 Cooptoken = 1.000 COOP) ---
-  executeSwap(wallet: WalletAccount, cooptokenAmount: number): { wallet: WalletAccount; coopReceived: number } {
+  // --- 3. SWAP (1,000 Cooptoken = 1.000 COOP — same rate, points to coin) ---
+  async executeSwap(wallet: WalletAccount, cooptokenAmount: number): Promise<{ wallet: WalletAccount; coopReceived: number }> {
     if (cooptokenAmount < 1000) {
       throw new Error('Minimum swap is 1,000 Cooptoken');
     }
+
+    if (supabase && !wallet.id.startsWith('w_')) {
+      try {
+        const { data, error } = await supabase.rpc('rpc_execute_swap', {
+          p_wallet_id: wallet.id,
+          p_cooptoken_amount: cooptokenAmount
+        });
+        if (!error && data) {
+          const updated = this.walletFromDb(data.wallet, wallet.privateKey);
+          const coopReceived = Number((updated.coopBalance - wallet.coopBalance).toFixed(4));
+          return { wallet: updated, coopReceived };
+        }
+        if (error) throw new Error(error.message);
+      } catch (e: any) {
+        throw new Error(e?.message || 'Swap failed');
+      }
+    }
+
+    // Offline fallback
     if (wallet.cooptokenBalance < cooptokenAmount) {
       throw new Error('Insufficient Cooptoken balance');
     }
@@ -346,7 +407,7 @@ class DatabaseService {
   }
 
   // --- 4. SEND COOP ---
-  executeSend(wallet: WalletAccount, recipient: string, amount: number): { wallet: WalletAccount; fee: number } {
+  async executeSend(wallet: WalletAccount, recipient: string, amount: number): Promise<{ wallet: WalletAccount; fee: number }> {
     const fee = 0.02; // Network fee
     const totalDeduct = amount + fee;
 
@@ -355,6 +416,24 @@ class DatabaseService {
       throw new Error(`Insufficient COOP balance for transfer + 0.02 fee`);
     }
 
+    if (supabase && !wallet.id.startsWith('w_')) {
+      try {
+        const { data, error } = await supabase.rpc('rpc_execute_send', {
+          p_wallet_id: wallet.id,
+          p_recipient: recipient,
+          p_amount: amount
+        });
+        if (!error && data) {
+          const updated = this.walletFromDb(data.wallet, wallet.privateKey);
+          return { wallet: updated, fee };
+        }
+        if (error) throw new Error(error.message);
+      } catch (e: any) {
+        throw new Error(e?.message || 'Send failed');
+      }
+    }
+
+    // Offline fallback
     wallet.coopBalance = Number((wallet.coopBalance - totalDeduct).toFixed(4));
     wallet.totalSent = Number((wallet.totalSent + amount).toFixed(4));
     this.saveWallet(wallet);
@@ -376,14 +455,34 @@ class DatabaseService {
   }
 
   // --- 5. BOOST PURCHASE ---
-  purchaseBoost(wallet: WalletAccount, tier: BoostTier): WalletAccount {
+  async purchaseBoost(wallet: WalletAccount, tier: BoostTier): Promise<WalletAccount> {
+    if (supabase && !wallet.id.startsWith('w_')) {
+      try {
+        const { data, error } = await supabase.rpc('rpc_purchase_boost', {
+          p_wallet_id: wallet.id,
+          p_tier_name: tier.name,
+          p_cost_usd: tier.costUsd,
+          p_bonus_reward: tier.rewardBonus,
+          p_boost_pct: tier.boostPct
+        });
+        if (!error && data) {
+          const updated = this.walletFromDb(data.wallet, wallet.privateKey);
+          // Refresh the active session with the new boost (server-side)
+          await this.startMiningSession(wallet.id).catch(() => {});
+          return updated;
+        }
+        if (error) throw new Error(error.message);
+      } catch (e: any) {
+        throw new Error(e?.message || 'Boost purchase failed');
+      }
+    }
+
+    // Offline fallback
     wallet.miningPowerLevel += 1;
     wallet.currentBoostPct += tier.boostPct;
     wallet.totalBoostReward = Number((wallet.totalBoostReward + tier.rewardBonus).toFixed(2));
     this.saveWallet(wallet);
-
-    // Refresh active mining session with the new boost
-    this.startMiningSession(wallet.id, wallet.currentBoostPct, wallet.totalBoostReward);
+    await this.startMiningSession(wallet.id, wallet.currentBoostPct, wallet.totalBoostReward);
 
     this.addTransaction(wallet.id, {
       id: 'tx_' + Date.now(),
@@ -401,14 +500,57 @@ class DatabaseService {
     return wallet;
   }
 
-  // --- 6. TASKS & REWARDS ---
-  getTasks(walletId: string): TaskItem[] {
-    const key = `tasks_${walletId}`;
-    return this.getStorage<TaskItem[]>(key, DEFAULT_TASKS);
+  // --- 6. TASKS & REWARDS (Supabase tasks table, offline fallback) ---
+  async getTasks(walletId: string): Promise<TaskItem[]> {
+    if (supabase) {
+      try {
+        const { data: catalog, error } = await supabase.from('tasks').select('*');
+        if (!error && catalog) {
+          const { data: userTasks } = await supabase
+            .from('user_tasks')
+            .select('*')
+            .eq('wallet_id', walletId);
+          const statusById = new Map<string, string>(
+            (userTasks || []).map((ut: any) => [ut.task_id, ut.status])
+          );
+          return catalog.map((t: any) => ({
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            category: t.category === 'all' ? 'special' : t.category,
+            rewardCooptoken: Number(t.reward_cooptoken),
+            actionUrl: t.action_url || undefined,
+            icon: (t.icon === 'twitter' ? 'x' : t.icon) as TaskItem['icon'],
+            status: statusById.get(t.id) === 'claimed' ? 'claimed' : 'pending'
+          }));
+        }
+      } catch (e) {
+        console.warn('Supabase getTasks fallback:', e);
+      }
+    }
+    return this.getStorage<TaskItem[]>(`tasks_${walletId}`, DEFAULT_TASKS);
   }
 
-  claimTask(wallet: WalletAccount, taskId: string): { wallet: WalletAccount; tasks: TaskItem[]; reward: number } {
-    const tasks = this.getTasks(wallet.id);
+  async claimTask(wallet: WalletAccount, taskId: string): Promise<{ wallet: WalletAccount; tasks: TaskItem[]; reward: number }> {
+    if (supabase && !wallet.id.startsWith('w_')) {
+      try {
+        const { data, error } = await supabase.rpc('rpc_claim_task_reward', {
+          p_wallet_id: wallet.id,
+          p_task_id: taskId
+        });
+        if (!error && data) {
+          const updated = this.walletFromDb(data.wallet, wallet.privateKey);
+          const tasks = await this.getTasks(wallet.id);
+          return { wallet: updated, tasks, reward: Number(data.task_reward ?? 0) };
+        }
+        if (error) throw new Error(error.message);
+      } catch (e: any) {
+        throw new Error(e?.message || 'Task claim failed');
+      }
+    }
+
+    // Offline fallback
+    const tasks = await this.getTasks(wallet.id);
     const target = tasks.find(t => t.id === taskId);
     if (!target) throw new Error('Task not found');
     if (target.status === 'claimed') throw new Error('Task already claimed');
@@ -416,7 +558,6 @@ class DatabaseService {
     target.status = 'claimed';
     const reward = target.rewardCooptoken;
 
-    // Credit Cooptoken
     wallet.cooptokenBalance = Number((wallet.cooptokenBalance + reward).toFixed(4));
     this.saveWallet(wallet);
     this.setStorage(`tasks_${wallet.id}`, tasks);
@@ -437,15 +578,46 @@ class DatabaseService {
     return { wallet, tasks, reward };
   }
 
-  // --- 7. TRANSACTIONS ---
-  getTransactions(walletId: string): Transaction[] {
+  // --- 7. TRANSACTIONS (Supabase transactions table, offline fallback) ---
+  async getTransactions(walletId: string): Promise<Transaction[]> {
+    if (supabase && !walletId.startsWith('w_')) {
+      try {
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('wallet_id', walletId)
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (!error && data) {
+          return data.map((row: any) => this.txFromDb(row));
+        }
+      } catch (e) {
+        console.warn('Supabase getTransactions fallback:', e);
+      }
+    }
     return this.getStorage<Transaction[]>(`txs_${walletId}`, []);
   }
 
   addTransaction(walletId: string, tx: Transaction): void {
-    const txs = this.getTransactions(walletId);
+    // Local cache (offline / local-fallback wallets)
+    const txs = this.getStorage<Transaction[]>(`txs_${walletId}`, []);
     txs.unshift(tx);
     this.setStorage(`txs_${walletId}`, txs);
+
+    // Persist to Supabase (server-side RPCs also insert their own rows)
+    if (supabase && !walletId.startsWith('w_')) {
+      supabase.from('transactions').insert({
+        wallet_id: walletId,
+        tx_type: tx.txType,
+        amount: tx.amount,
+        currency: tx.currency,
+        counterparty: tx.counterparty,
+        fee: tx.fee ?? 0,
+        status: tx.status,
+        tx_hash: tx.txHash,
+        notes: tx.notes ?? null
+      }).then(() => {});
+    }
   }
 }
 

@@ -117,8 +117,8 @@ body {
   overflow: hidden;
 }
 
-/* All phones (including large iPhones) stay full-bleed — never narrow */
-@media (max-width: 767px) {
+/* All phones (including large iPhones & landscape) stay full-bleed — never narrow */
+@media (max-width: 1023px) {
   .app-viewport {
     align-items: stretch;
     background-color: var(--bg-surface);
@@ -129,11 +129,15 @@ body {
     border-radius: 0;
     border: none;
     box-shadow: none;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 100vh;
+    min-height: 100dvh;
   }
 }
 
-/* Tablet & Desktop: Clean centered app-column look (no phone mockup bezel) */
-@media (min-width: 768px) {
+/* Desktop (real screens): Clean centered app-column look (no phone mockup bezel) */
+@media (min-width: 1024px) {
   .app-viewport {
     justify-content: center;
     align-items: center;

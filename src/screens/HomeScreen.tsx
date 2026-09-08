@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Bell, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, History, Zap, ChevronRight } from 'lucide-react';
 import { CoopLogo } from '../components/CoopLogo';
+import { CoinIcon } from '../components/CoinIcon';
 import { useWallet } from '../context/WalletContext';
 import { NotificationDrawer } from '../components/NotificationDrawer';
 
@@ -20,6 +21,9 @@ export const HomeScreen: React.FC = () => {
   const coopBalance = account?.coopBalance || 0;
   const totalUsd = (coopBalance * coopPrice).toFixed(2);
   const cooptokenBalance = account?.cooptokenBalance || 0;
+
+  // Real mining power (level-based, not a mock)
+  const miningPowerPct = Math.min(100, Math.round(((account?.miningPowerLevel || 1) - 1) * 15 + 15));
 
   // Today's mining reward calculation
   const rewardTotal = miningSession?.totalReward || (50 + (account?.totalBoostReward || 0));
@@ -132,6 +136,66 @@ export const HomeScreen: React.FC = () => {
         </button>
       </div>
 
+      {/* Assets / Networks */}
+      <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>Assets</span>
+        <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>BEP-20 Network</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        {[
+          {
+            coin: 'COOP' as const,
+            name: 'Coopcoin',
+            network: 'Coop Mainnet · BEP-20',
+            balance: coopBalance,
+            usd: (coopBalance * coopPrice).toFixed(2),
+            soon: false
+          },
+          {
+            coin: 'COOPTOKEN' as const,
+            name: 'Cooptoken',
+            network: 'Mining Points · Swaps 1,000 → 1 COOP',
+            balance: cooptokenBalance,
+            usd: (cooptokenBalance * coopPrice / 1000).toFixed(2),
+            soon: false
+          },
+          {
+            coin: 'USDT' as const,
+            name: 'USDT',
+            network: 'BEP-20 · Buy Boost & Miners',
+            balance: 0,
+            usd: '0.00',
+            soon: true
+          }
+        ].map(asset => (
+          <div key={asset.coin} className="bubble-card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <CoinIcon coin={asset.coin} size={38} />
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {asset.name}
+                  {asset.soon && (
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: '0.5px',
+                      padding: '2px 6px', borderRadius: 6,
+                      background: 'var(--bg-glass-active)', border: '1px solid var(--border-color)',
+                      color: 'var(--text-tertiary)'
+                    }}>SOON</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 1 }}>{asset.network}</div>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>
+                {asset.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ ${asset.usd}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Mining Power Card */}
       <div 
         className="bubble-card" 
@@ -147,9 +211,9 @@ export const HomeScreen: React.FC = () => {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="custom-progress-track" style={{ flex: 1 }}>
-            <div className="custom-progress-fill" style={{ width: '45%' }} />
+            <div className="custom-progress-fill" style={{ width: `${miningPowerPct}%` }} />
           </div>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>45%</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>{miningPowerPct}%</span>
         </div>
       </div>
 
