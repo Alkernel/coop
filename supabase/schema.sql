@@ -87,6 +87,10 @@ create table if not exists public.mining_sessions (
 );
 create index if not exists idx_mining_wallet on public.mining_sessions(wallet_id, start_time);
 
+-- Add missing columns to existing tables (safe no-ops if already present)
+alter table public.mining_sessions add column if not exists credited_hours numeric(8, 4) not null default 0.0000;
+alter table public.mining_sessions add column if not exists reward_amount numeric(20, 4) not null default 0.0000;
+
 -- ----------------------------------------------------------
 -- 5. SWAP REQUESTS (anti-replay)
 -- ----------------------------------------------------------
