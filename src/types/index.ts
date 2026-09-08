@@ -16,7 +16,6 @@ export type ScreenName =
   | 'help_support'
   | 'about'
   | 'security'
-  | 'admin'
   | 'locked';
 
 export type Currency = 'COOP' | 'Coopoints';

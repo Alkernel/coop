@@ -18,7 +18,6 @@ import { WalletDetailsScreen } from './screens/WalletDetailsScreen';
 import { HelpSupportScreen } from './screens/HelpSupportScreen';
 import { AboutScreen } from './screens/AboutScreen';
 import { SecurityScreen } from './screens/SecurityScreen';
-import { AdminScreen } from './screens/AdminScreen';
 import { WalletLockScreen } from './screens/WalletLockScreen';
 
 export const App: React.FC = () => {
@@ -60,8 +59,6 @@ export const App: React.FC = () => {
         return <AboutScreen />;
       case 'security':
         return <SecurityScreen />;
-      case 'admin':
-        return <AdminScreen />;
       case 'locked':
         return <WalletLockScreen />;
       default:

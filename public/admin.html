@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>COOP Admin Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#0a0a0a;--bg-card:#141414;--bg-input:#1a1a1a;--border:#2a2a2a;--text:#fff;--text-secondary:#a0a0a0;--text-tertiary:#666;--accent:#fff;--accent-green:#22c55e;--accent-green-bg:rgba(34,197,94,.12);--accent-red:#ef4444;--accent-red-bg:rgba(239,68,68,.12);--font-sans:'Plus Jakarta Sans',system-ui,sans-serif;--font-mono:'JetBrains Mono',monospace}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:var(--font-sans);background:var(--bg);color:var(--text);min-height:100vh;padding:24px}
+    .container{max-width:640px;margin:0 auto}
+    .header{display:flex;align-items:center;gap:12px;padding:12px 0 24px 0}
+    .header h1{font-size:22px;font-weight:800;letter-spacing:.5px}
+    .header p{font-size:13px;color:var(--text-secondary);font-weight:500}
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px}
+    .card-title{font-size:12px;font-weight:800;letter-spacing:1px;color:var(--text-tertiary);margin-bottom:12px;text-transform:uppercase}
+    label{display:block;font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:6px}
+    input[type=text],input[type=password],input[type=number],textarea{width:100%;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-sans);font-size:14px;outline:0;transition:border-color .2s}
+    input:focus,textarea:focus{border-color:var(--accent)}
+    textarea{font-family:var(--font-mono);font-size:12px;resize:vertical}
+    .field{margin-bottom:14px}
+    .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0}
+    .toggle-row label{margin-bottom:0;cursor:pointer}
+    .toggle{position:relative;width:44px;height:24px;background:var(--border);border-radius:12px;cursor:pointer;transition:background .2s}
+    .toggle.active{background:var(--accent-green)}
+    .toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s}
+    .toggle.active::after{transform:translateX(20px)}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:var(--accent);color:var(--bg);border:0;border-radius:12px;font-family:var(--font-sans);font-size:14px;font-weight:700;cursor:pointer;transition:opacity .2s}
+    .btn:hover{opacity:.9}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn-secondary{background:var(--bg-input);color:var(--text);border:1px solid var(--border)}
+    .msg{padding:10px 14px;border-radius:12px;font-size:13px;margin-top:16px;display:none;align-items:center;gap:8px}
+    .msg-error{background:var(--accent-red-bg);color:var(--accent-red)}
+    .msg-success{background:var(--accent-green-bg);color:var(--accent-green)}
+    .btn-row{display:flex;gap:12px;margin-top:20px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><div><h1>COOP Admin</h1><p>System configuration</p></div></div>
+    <div id="login-section" class="card">
+      <div class="card-title">Admin Authentication</div>
+      <div class="field"><label>Admin Key</label><input type="password" id="admin-key" placeholder="Enter admin key..."/></div>
+      <button class="btn" id="login-btn" onclick="authenticate()">Unlock</button>
+      <div id="login-msg" class="msg"></div>
+    </div>
+    <div id="settings-section" style="display:none">
+      <div class="card"><div class="card-title">Mining</div>
+        <div class="field"><label>Base Mining Rate (Coopoints/hour)</label><input type="number" id="base-mining-rate" step="0.01"/></div>
+        <div class="field"><label>Daily Mining Hours</label><input type="number" id="daily-mining-hours" step="0.01"/></div>
+        <div class="toggle-row"><label>Mining Enabled</label><div class="toggle" id="mining-enabled" onclick="toggle('mining-enabled')"></div></div>
+      </div>
+      <div class="card"><div class="card-title">Conversion</div>
+        <div class="field"><label>Points Per COOP (ratio)</label><input type="number" id="points-per-coop" step="0.01"/></div>
+        <div class="field"><label>Daily Conversion Limit (points)</label><input type="number" id="daily-conversion-limit" step="0.01"/></div>
+        <div class="toggle-row"><label>Conversion Enabled</label><div class="toggle" id="conversion-enabled" onclick="toggle('conversion-enabled')"></div></div>
+      </div>
+      <div class="card"><div class="card-title">COOP Reward Pool</div>
+        <div class="field"><label>Total COOP Reward Pool</label><input type="number" id="total-pool" step="0.01"/></div>
+        <div class="field"><label>Remaining COOP Reward Pool</label><input type="number" id="remaining-pool" step="0.01"/></div>
+      </div>
+      <div class="card"><div class="card-title">Boosts</div>
+        <div class="toggle-row"><label>Boost Purchases Enabled</label><div class="toggle" id="boost-purchases-enabled" onclick="toggle('boost-purchases-enabled')"></div></div>
+        <div class="toggle-row"><label>Boosts Stackable</label><div class="toggle" id="boosts-stackable" onclick="toggle('boosts-stackable')"></div></div>
+      </div>
+      <div class="card"><div class="card-title">Anti-Abuse</div>
+        <div class="field"><label>Swap Rate Limit (seconds between swaps)</label><input type="number" id="swap-rate-limit" step="1"/></div>
+      </div>
+      <div class="card"><div class="card-title">Boost Tiers (JSON)</div>
+        <div class="field"><textarea id="boost-tiers" rows="8" placeholder="JSON array of boost tiers"></textarea></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="save-btn" onclick="saveSettings()">Save Settings</button>
+        <button class="btn btn-secondary" onclick="loadSettings()">Refresh</button>
+      </div>
+      <div id="save-msg" class="msg"></div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL="YOUR_SUPABASE_URL";
+    const SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY";
+    let supabase=null,authenticated=false;
+    function $(t){return document.getElementById(t)}
+    function toggle(t){$(t).classList.toggle("active")}
+    function isActive(t){return $(t).classList.contains("active")}
+    function setToggle(t,e){e?$(t).classList.add("active"):$(t).classList.remove("active")}
+    function showMsg(t,e,s){const o=$(t);o.className="msg "+(s?"msg-error":"msg-success");o.textContent=e;o.style.display="flex"}
+    function hideMsg(t){$(t).style.display="none"}
+    async function authenticate(){
+      const t=$("admin-key").value.trim();
+      if(!t)return void showMsg("login-msg","Admin key is required",!0);
+      try{
+        supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+        const{data:e,error:s}=await supabase.rpc("rpc_get_settings");
+        if(s)throw s;
+        authenticated=!0;$("login-section").style.display="none";$("settings-section").style.display="block";
+        populateForm(e);hideMsg("login-msg");
+      }catch(t){showMsg("login-msg","Authentication failed: "+(t.message||"Invalid key"),!0)}
+    }
+    function populateForm(t){
+      $("base-mining-rate").value=t.base_mining_rate;$("daily-mining-hours").value=t.daily_mining_hours;
+      $("points-per-coop").value=t.points_per_coop;$("daily-conversion-limit").value=t.daily_conversion_limit_points;
+      $("total-pool").value=t.total_coop_reward_pool;$("remaining-pool").value=t.remaining_coop_reward_pool;
+      $("swap-rate-limit").value=t.swap_rate_limit_seconds;$("boost-tiers").value=JSON.stringify(t.boost_tiers,null,2);
+      setToggle("mining-enabled",t.mining_enabled);setToggle("conversion-enabled",t.conversion_enabled);
+      setToggle("boost-purchases-enabled",t.boost_purchases_enabled);setToggle("boosts-stackable",t.boosts_stackable);
+    }
+    async function loadSettings(){
+      hideMsg("save-msg");
+      try{const{data:t,error:e}=await supabase.rpc("rpc_get_settings");if(e)throw e;populateForm(t)}
+      catch(t){showMsg("save-msg","Failed to load: "+t.message,!0)}
+    }
+    async function saveSettings(){
+      hideMsg("save-msg");
+      const t=$("admin-key").value.trim();
+      if(!t)return void showMsg("save-msg","Admin key is required",!0);
+      let e;
+      try{if(e=JSON.parse($("boost-tiers").value),!Array.isArray(e))throw new Error("Must be a JSON array")}
+      catch(t){return void showMsg("save-msg","Invalid boost tiers JSON: "+t.message,!0)}
+      const s={base_mining_rate:parseFloat($("base-mining-rate").value),daily_mining_hours:parseFloat($("daily-mining-hours").value),points_per_coop:parseFloat($("points-per-coop").value),daily_conversion_limit_points:parseFloat($("daily-conversion-limit").value),total_coop_reward_pool:parseFloat($("total-pool").value),remaining_coop_reward_pool:parseFloat($("remaining-pool").value),mining_enabled:isActive("mining-enabled"),conversion_enabled:isActive("conversion-enabled"),boost_purchases_enabled:isActive("boost-purchases-enabled"),boosts_stackable:isActive("boosts-stackable"),swap_rate_limit_seconds:parseInt($("swap-rate-limit").value),boost_tiers:e};
+      $("save-btn").disabled=!0;$("save-btn").textContent="Saving...";
+      try{
+        const{error:e}=await supabase.rpc("rpc_admin_set_settings",{admin_key:t,updates:JSON.stringify(s)});
+        if(e)throw e;showMsg("save-msg","Settings saved successfully!",!1);
+      }catch(t){showMsg("save-msg","Save failed: "+t.message,!0)}
+      finally{$("save-btn").disabled=!1;$("save-btn").textContent="Save Settings"}
+    }
+    $("admin-key").addEventListener("keypress",(t)=>{"Enter"===t.key&&authenticate()});
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
