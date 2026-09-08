@@ -1,4 +1,4 @@
--- ==========================================================
+﻿-- ==========================================================
 -- COOP WALLET — SUPABASE DATABASE SCHEMA & RPC FUNCTIONS (v2)
 -- Real server-side mining, bidirectional swap with controlled
 -- COOP reward pool, admin settings, locked-down RLS.
@@ -53,6 +53,33 @@ create table if not exists public.admin_settings (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 insert into public.admin_settings (id) values ('default') on conflict (id) do nothing;
+-- Helper: verify admin key (used by admin panel login)
+CREATE OR REPLACE FUNCTION public.rpc_verify_admin_key(p_admin_key text)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT COALESCE(
+    (SELECT encode(digest(p_admin_key, 'sha256'), 'hex') =
+            (SELECT admin_key_hash FROM public.admin_settings WHERE id = 'default')),
+    false
+  );
+$$;
+
+-- Helper: log a key generation (for server-side cooldown enforcement)
+CREATE OR REPLACE FUNCTION public.rpc_log_key_generation(p_wallet_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  INSERT INTO public.key_generation_log (wallet_id, created_at)
+  VALUES (p_wallet_id, now())
+  ON CONFLICT DO NOTHING;
+END;
+$$;
+
+
 
 -- ----------------------------------------------------------
 -- 3. BOOSTS
@@ -90,6 +117,30 @@ create index if not exists idx_mining_wallet on public.mining_sessions(wallet_id
 -- Add missing columns to existing tables (safe no-ops if already present)
 alter table public.mining_sessions add column if not exists credited_hours numeric(8, 4) not null default 0.0000;
 alter table public.mining_sessions add column if not exists reward_amount numeric(20, 4) not null default 0.0000;
+
+-- ----------------------------------------------------------
+-- 5b. KEY GENERATION LOG (server-side cooldown enforcement)
+-- ----------------------------------------------------------
+create table if not exists public.key_generation_log (
+  id uuid primary key default uuid_generate_v4(),
+  wallet_id uuid references public.wallets(id) on delete cascade not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+create index if not exists idx_keygen_wallet on public.key_generation_log(wallet_id, created_at);
+
+-- Helper: check if user can generate a new key (server-side cooldown)
+create or replace function public.rpc_can_generate_key(p_wallet_id uuid)
+returns boolean
+language sql
+stable
+security definer
+as $$
+  select coalesce(
+    max(case when created_at > now() - interval '1 minute' then true else false end
+    ), false)
+  from public.key_generation_log
+  where wallet_id = p_wallet_id;
+$$;
 
 -- ----------------------------------------------------------
 -- 5. SWAP REQUESTS (anti-replay)
@@ -515,8 +566,9 @@ begin
       and tx_type = 'swap' and direction = 'points_to_coop' and status = 'Complete'
       and (created_at at time zone 'utc')::date = (now() at time zone 'utc')::date;
     if v_points_today + v_points_leg > v_settings.daily_conversion_limit_points then
-      raise exception 'Daily conversion limit reached. You can convert up to '
-        || v_settings.daily_conversion_limit_points::text || ' Coopoints per day';
+      raise exception using errcode = 'P0001',
+        message = format('Daily conversion limit reached. You can convert up to %s Coopoints per day',
+          v_settings.daily_conversion_limit_points::text);
     end if;
 
     -- Controlled emission pool check (points are NEVER touched on failure)

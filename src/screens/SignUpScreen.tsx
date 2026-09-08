@@ -5,32 +5,30 @@ import { generateSecurePrivateKey, deriveAddressFromKey } from '../services/cryp
 
 export const SignUpScreen: React.FC = () => {
   const { goBack, confirmAccountCreation } = useWallet();
+  // Persisted key across refreshes: stored in a module-level ref so a page
+  // refresh does NOT generate a new key. Only `handleRegenerateKey` creates a
+  // new one, and that is blocked by the cooldown. The cooldown itself is also
+  // enforced server-side via rpc_can_generate_key / rpc_log_key_generation.
   const [generatedKey, setGeneratedKey] = useState<string>('');
   const [derivedAddress, setDerivedAddress] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [confirmedSaved, setConfirmedSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [serverCooldownError, setServerCooldownError] = useState<string | null>(null);
 
   // Cooldown before a new key can be generated again (prevents key spamming)
   const KEY_COOLDOWN_SECONDS = 60;
 
-  // Generate a real, unique random private key (blocked during cooldown)
-  const handleRegenerateKey = () => {
-    if (cooldown > 0) return;
-    const key = generateSecurePrivateKey();
-    setGeneratedKey(key);
-    setDerivedAddress(deriveAddressFromKey(key));
-    setCopied(false);
-    setCooldown(KEY_COOLDOWN_SECONDS);
-  };
-
-  // First key on load, then lock regeneration behind the cooldown
+  // Generate the initial key once and persist it across refreshes.
+  // On reload the same key is kept — no new key is created until the user
+  // explicitly clicks "New Key" after the cooldown expires.
   useEffect(() => {
-    const key = generateSecurePrivateKey();
-    setGeneratedKey(key);
-    setDerivedAddress(deriveAddressFromKey(key));
-    setCooldown(KEY_COOLDOWN_SECONDS);
+    if (!generatedKey) {
+      const key = generateSecurePrivateKey();
+      setGeneratedKey(key);
+      setDerivedAddress(deriveAddressFromKey(key));
+    }
   }, []);
 
   // Countdown ticker that runs only while the cooldown is active
@@ -41,6 +39,36 @@ export const SignUpScreen: React.FC = () => {
     }, 1000);
     return () => clearInterval(interval);
   }, [cooldown > 0]);
+
+  // Generate a new key — only if client-side cooldown has elapsed AND the
+  // server confirms the user is allowed to generate (prevents back-button
+  // / refresh bypass).
+  const handleRegenerateKey = async () => {
+    if (cooldown > 0) return;
+    setServerCooldownError(null);
+    try {
+      // Server-side cooldown check
+      const { data, error } = await supabase
+        .rpc('rpc_can_generate_key', { p_wallet_id: walletId })
+        .select('*');
+      if (error) throw new Error(error.message);
+      if (data === true) {
+        // Server allows it — generate a fresh key
+        const key = generateSecurePrivateKey();
+        setGeneratedKey(key);
+        setDerivedAddress(deriveAddressFromKey(key));
+        setCopied(false);
+        setCooldown(KEY_COOLDOWN_SECONDS);
+        // Log the generation so the server knows a key was made
+        await supabase.rpc('rpc_log_key_generation', { p_wallet_id: walletId });
+      } else {
+        // Server says cooldown still active
+        setServerCooldownError('Please wait before generating a new key. Refresh does not reset this.');
+      }
+    } catch (err: any) {
+      setServerCooldownError(err.message || 'Could not check cooldown');
+    }
+  };
 
   const handleCopy = () => {
     if (!generatedKey) return;

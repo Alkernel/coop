@@ -1,4 +1,4 @@
-﻿import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { deriveAddressFromKey } from './crypto';
 import {
   WalletAccount, MiningSession, MiningStatus, Transaction, TaskItem,
