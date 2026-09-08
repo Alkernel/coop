@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ArrowDownUp, Check, AlertCircle } from 'lucide-react';
-import { CoopLogo } from '../components/CoopLogo';
+import { CoinIcon } from '../components/CoinIcon';
 import { useWallet } from '../context/WalletContext';
 import confetti from 'canvas-confetti';
 
@@ -75,23 +75,12 @@ export const SwapScreen: React.FC = () => {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 38,
-                height: 38,
-                borderRadius: '50%',
-                background: 'var(--bg-glass-active)',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 800,
-                fontSize: 16
-              }}>
-                ⚡
-              </div>
+              <CoinIcon coin="COOPTOKEN" size={38} />
               <div>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>Cooptoken</div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Mining Coin</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontWeight: 700, fontSize: 16 }}>Cooptoken</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Mining Coin · BEP-20</div>
               </div>
             </div>
 
@@ -187,21 +176,12 @@ export const SwapScreen: React.FC = () => {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 38,
-                height: 38,
-                borderRadius: '50%',
-                background: 'var(--bg-glass-active)',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <CoopLogo size={22} />
-              </div>
+              <CoinIcon coin="COOP" size={38} />
               <div>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>COOP</div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Mainnet Wallet</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontWeight: 700, fontSize: 16 }}>COOP</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Mainnet Wallet · BEP-20</div>
               </div>
             </div>
 

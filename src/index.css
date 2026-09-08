@@ -475,3 +475,50 @@ body {
   flex-direction: column;
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.3);
 }
+
+/* Coop Logo Wrapper — inherits theme text color so the logo fits dark/light */
+.coop-logo-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  line-height: 0;
+}
+
+.coop-logo-wrapper svg {
+  display: block;
+}
+
+/* Coin / token icon wrapper — inherits theme text color */
+.coin-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  line-height: 0;
+}
+
+.coin-icon-wrapper svg {
+  display: block;
+}
+
+/* Logo glow (soft lighting so it shows well on dark theme) */
+.logo-glow {
+  filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.25));
+}
+
+/* Logo pulse animation */
+@keyframes logoPulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
+  }
+  50% {
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 22px rgba(255, 255, 255, 0.45));
+  }
+}
+
+.logo-pulsing {
+  animation: logoPulse 2.4s infinite ease-in-out;
+}
