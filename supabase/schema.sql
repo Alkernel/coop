@@ -68,7 +68,7 @@ create table if not exists public.boosts (
 );
 create index if not exists idx_boosts_wallet on public.boosts(wallet_id);
 
-﻿
+
 
 -- ----------------------------------------------------------
 -- 4. MINING SESSIONS (server-clock accrual, daily UTC quota)
