@@ -339,6 +339,36 @@ begin
     raise exception 'Mining is currently disabled';
   end if;
 
+  select * into v_existing from public.mining_sessions
+  where wallet_id = p_wallet_id and status = 'mining'
+  order by created_at desc limit 1;
+
+  if found then
+    return to_jsonb(v_existing);
+  end if;
+
+  v_hours := public._hours_mined_today(p_wallet_id);
+  v_remaining_hours := v_settings.daily_mining_hours - v_hours;
+  if v_remaining_hours <= 0 then
+    raise exception 'Daily mining limit reached. Mining resets at 00:00 UTC';
+  end if;
+
+  v_boost := public._active_boost_pct(p_wallet_id, v_settings.boosts_stackable);
+
+  insert into public.mining_sessions (
+    wallet_id, start_time, end_time, base_rate, boost_pct, status
+  ) values (
+    p_wallet_id,
+    now(),
+    now() + make_interval(hours => v_remaining_hours),
+    v_settings.base_mining_rate,
+    v_boost,
+    'mining'
+  ) returning * into v_session;
+
+  return to_jsonb(v_session);
+end;
+$$;
 
 -- D. Stop mining & claim (reward computed entirely server-side)
 create or replace function public.rpc_stop_mining(p_wallet_id uuid)
@@ -404,37 +434,6 @@ begin
     'reward', v_reward,
     'tx_hash', v_tx_hash
   );
-end;
-$$;
-
-  select * into v_existing from public.mining_sessions
-  where wallet_id = p_wallet_id and status = 'mining'
-  order by created_at desc limit 1;
-
-  if found then
-    return to_jsonb(v_existing);
-  end if;
-
-  v_hours := public._hours_mined_today(p_wallet_id);
-  v_remaining_hours := v_settings.daily_mining_hours - v_hours;
-  if v_remaining_hours <= 0 then
-    raise exception 'Daily mining limit reached. Mining resets at 00:00 UTC';
-  end if;
-
-  v_boost := public._active_boost_pct(p_wallet_id, v_settings.boosts_stackable);
-
-  insert into public.mining_sessions (
-    wallet_id, start_time, end_time, base_rate, boost_pct, status
-  ) values (
-    p_wallet_id,
-    now(),
-    now() + make_interval(hours => v_remaining_hours),
-    v_settings.base_mining_rate,
-    v_boost,
-    'mining'
-  ) returning * into v_session;
-
-  return to_jsonb(v_session);
 end;
 $$;
 
