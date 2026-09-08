@@ -1,20 +1,22 @@
 -- ==========================================================
--- COOP MOBILE WALLET - SUPABASE DATABASE SCHEMA & RPC FUNCTIONS
+-- COOP WALLET — SUPABASE DATABASE SCHEMA & RPC FUNCTIONS (v2)
+-- Real server-side mining, bidirectional swap with controlled
+-- COOP reward pool, admin settings, locked-down RLS.
+-- Run this whole file once in the Supabase SQL Editor.
 -- ==========================================================
 
--- Enable UUID extension
 create extension if not exists "uuid-ossp";
+create extension if not exists "pgcrypto";
 
--- 1. WALLETS TABLE
+-- ----------------------------------------------------------
+-- 1. WALLETS (the user table)
+-- ----------------------------------------------------------
 create table if not exists public.wallets (
   id uuid primary key default uuid_generate_v4(),
   address text unique not null,
   private_key_hash text not null,
   coop_balance numeric(20, 4) not null default 0.0000,
-  cooptoken_balance numeric(20, 4) not null default 0.0000,
-  mining_power_level integer not null default 1,
-  current_boost_pct integer not null default 0,
-  total_boost_reward numeric(20, 4) not null default 0.0000,
+  cooptoken_balance numeric(20, 4) not null default 0.0000,   -- Coopoints (internal reward points)
   total_sent numeric(20, 4) not null default 0.0000,
   total_received numeric(20, 4) not null default 0.0000,
   pin_code text default '123456',
@@ -25,33 +27,100 @@ create table if not exists public.wallets (
   last_active_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 2. MINING SESSIONS TABLE
+-- ----------------------------------------------------------
+-- 2. ADMIN SETTINGS (single row 'default')
+-- ----------------------------------------------------------
+create table if not exists public.admin_settings (
+  id text primary key default 'default',
+  base_mining_rate numeric(20, 4) not null default 50.0000,
+  daily_mining_hours numeric(6, 2) not null default 12.00,
+  points_per_coop numeric(20, 4) not null default 10.0000,
+  daily_conversion_limit_points numeric(20, 4) not null default 50000.0000,
+  total_coop_reward_pool numeric(20, 4) not null default 1000000.0000,
+  remaining_coop_reward_pool numeric(20, 4) not null default 1000000.0000,
+  mining_enabled boolean not null default true,
+  conversion_enabled boolean not null default true,
+  boost_purchases_enabled boolean not null default false,
+  boosts_stackable boolean not null default false,
+  swap_rate_limit_seconds integer not null default 10,
+  boost_tiers jsonb not null default '[
+    {"id":"starter","name":"Starter","priceUsd":1.00,"boostPct":25,"durationDays":7},
+    {"id":"plus","name":"Plus","priceUsd":2.50,"boostPct":50,"durationDays":7},
+    {"id":"pro","name":"Pro","priceUsd":3.00,"boostPct":75,"durationDays":7},
+    {"id":"max","name":"Max","priceUsd":3.50,"boostPct":100,"durationDays":7}
+  ]'::jsonb,
+  admin_key_hash text not null default '',
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+insert into public.admin_settings (id) values ('default') on conflict (id) do nothing;
+
+-- ----------------------------------------------------------
+-- 3. BOOSTS
+-- ----------------------------------------------------------
+create table if not exists public.boosts (
+  id uuid primary key default uuid_generate_v4(),
+  wallet_id uuid references public.wallets(id) on delete cascade not null,
+  tier_id text not null,
+  boost_pct numeric(6, 2) not null,
+  starts_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  expires_at timestamp with time zone not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+create index if not exists idx_boosts_wallet on public.boosts(wallet_id);
+
+﻿
+
+-- ----------------------------------------------------------
+-- 4. MINING SESSIONS (server-clock accrual, daily UTC quota)
+-- ----------------------------------------------------------
 create table if not exists public.mining_sessions (
   id uuid primary key default uuid_generate_v4(),
   wallet_id uuid references public.wallets(id) on delete cascade not null,
   start_time timestamp with time zone default timezone('utc'::text, now()) not null,
   end_time timestamp with time zone not null,
-  duration_hours integer not null default 12,
-  base_reward numeric(20, 4) not null default 50.0000,
-  boost_reward numeric(20, 4) not null default 0.0000,
-  total_reward numeric(20, 4) not null default 50.0000,
-  status text not null default 'mining' check (status in ('mining', 'ready_to_claim', 'claimed')),
-  claimed_at timestamp with time zone,
+  base_rate numeric(20, 4) not null,
+  boost_pct numeric(6, 2) not null default 0,
+  credited_hours numeric(8, 4) not null default 0.0000,
+  reward_amount numeric(20, 4) not null default 0.0000,
+  status text not null default 'mining' check (status in ('mining', 'completed')),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+create index if not exists idx_mining_wallet on public.mining_sessions(wallet_id, start_time);
 
--- 3. BOOST PURCHASES TABLE
-create table if not exists public.boost_purchases (
+-- ----------------------------------------------------------
+-- 5. SWAP REQUESTS (anti-replay)
+-- ----------------------------------------------------------
+create table if not exists public.swap_requests (
   id uuid primary key default uuid_generate_v4(),
   wallet_id uuid references public.wallets(id) on delete cascade not null,
-  tier_name text not null,
-  cost_usd numeric(10, 2) not null,
-  bonus_reward numeric(20, 4) not null,
-  boost_pct integer not null default 0,
+  client_nonce text unique not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 4. TASKS TABLE
+-- ----------------------------------------------------------
+-- 6. TRANSACTIONS
+-- ----------------------------------------------------------
+create table if not exists public.transactions (
+  id uuid primary key default uuid_generate_v4(),
+  wallet_id uuid references public.wallets(id) on delete cascade not null,
+  tx_type text not null check (tx_type in ('send', 'receive', 'swap', 'mining', 'boost', 'task')),
+  amount numeric(20, 4) not null,
+  currency text not null check (currency in ('COOP', 'Cooptoken', 'Coopoints')),
+  points_amount numeric(20, 4) not null default 0.0000,
+  direction text,
+  counterparty text,
+  fee numeric(20, 4) default 0.0000,
+  status text not null default 'Complete' check (status in ('Complete', 'Pending', 'Failed')),
+  tx_hash text not null,
+  notes text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+create index if not exists idx_tx_wallet on public.transactions(wallet_id, created_at);
+
+
+-- ----------------------------------------------------------
+-- 7. TASKS / USER TASKS / BOOST PURCHASES
+-- ----------------------------------------------------------
 create table if not exists public.tasks (
   id text primary key,
   title text not null,
@@ -61,8 +130,6 @@ create table if not exists public.tasks (
   action_url text,
   icon text not null default 'check'
 );
-
--- Seed Initial Tasks
 insert into public.tasks (id, title, description, category, reward_cooptoken, action_url, icon)
 values
   ('task_x', 'Follow on X', 'Join our official X account for updates', 'social', 10.0000, 'https://x.com/coopcoin', 'twitter'),
@@ -72,7 +139,6 @@ values
   ('task_invite', 'Invite Friends', 'Earn rewards for every referral joining COOP', 'special', 50.0000, '', 'users')
 on conflict (id) do nothing;
 
--- 5. USER TASK STATUS TABLE
 create table if not exists public.user_tasks (
   id uuid primary key default uuid_generate_v4(),
   wallet_id uuid references public.wallets(id) on delete cascade not null,
@@ -83,41 +149,99 @@ create table if not exists public.user_tasks (
   unique(wallet_id, task_id)
 );
 
--- 6. TRANSACTIONS TABLE
-create table if not exists public.transactions (
+create table if not exists public.boost_purchases (
   id uuid primary key default uuid_generate_v4(),
   wallet_id uuid references public.wallets(id) on delete cascade not null,
-  tx_type text not null check (tx_type in ('send', 'receive', 'swap', 'mining', 'boost', 'task')),
-  amount numeric(20, 4) not null,
-  currency text not null check (currency in ('COOP', 'Cooptoken')),
-  counterparty text,
-  fee numeric(20, 4) default 0.0000,
-  status text not null default 'Complete' check (status in ('Complete', 'Pending', 'Failed')),
-  tx_hash text not null,
-  notes text,
+  tier_name text not null,
+  cost_usd numeric(10, 2) not null,
+  bonus_reward numeric(20, 4) not null default 0,
+  boost_pct integer not null default 0,
+  status text not null default 'pending',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- Row Level Security (RLS)
+-- ----------------------------------------------------------
+-- 8. ROW LEVEL SECURITY — READ-ONLY for clients.
+-- All writes go through security definer RPC functions only,
+-- so clients can never modify balances from the browser.
+-- ----------------------------------------------------------
 alter table public.wallets enable row level security;
+alter table public.admin_settings enable row level security;
 alter table public.mining_sessions enable row level security;
+alter table public.boosts enable row level security;
 alter table public.boost_purchases enable row level security;
 alter table public.tasks enable row level security;
 alter table public.user_tasks enable row level security;
 alter table public.transactions enable row level security;
+alter table public.swap_requests enable row level security;
 
-create policy "Public read tasks" on public.tasks for select using (true);
-create policy "Allow all on wallets for demo" on public.wallets for all using (true);
-create policy "Allow all on mining_sessions" on public.mining_sessions for all using (true);
-create policy "Allow all on boost_purchases" on public.boost_purchases for all using (true);
-create policy "Allow all on user_tasks" on public.user_tasks for all using (true);
-create policy "Allow all on transactions" on public.transactions for all using (true);
+drop policy if exists "Allow all on wallets for demo" on public.wallets;
+drop policy if exists "Allow all on mining_sessions" on public.mining_sessions;
+drop policy if exists "Allow all on boost_purchases" on public.boost_purchases;
+drop policy if exists "Allow all on user_tasks" on public.user_tasks;
+drop policy if exists "Allow all on transactions" on public.transactions;
+
+create policy "Read tasks" on public.tasks for select using (true);
+create policy "Read settings" on public.admin_settings for select using (true);
+create policy "Read mining" on public.mining_sessions for select using (true);
+create policy "Read boosts" on public.boosts for select using (true);
+create policy "Read user_tasks" on public.user_tasks for select using (true);
+create policy "Read transactions" on public.transactions for select using (true);
+-- wallets, swap_requests, boost_purchases: no client policies at all.
+
 
 -- ==========================================================
--- SERVER-SIDE RPC STORED PROCEDURES (ATOMIC & VALIDATED)
+-- RPC STORED PROCEDURES (server-side, atomic & validated)
 -- ==========================================================
 
--- A. Register or Login by Private Key
+-- Helper: active boost percentage for a wallet (server-side)
+create or replace function public._active_boost_pct(p_wallet_id uuid, p_stackable boolean)
+returns numeric
+language sql
+stable
+security definer
+as $$
+  select case when p_stackable
+    then coalesce(sum(boost_pct), 0)
+    else coalesce(max(boost_pct), 0)
+  end
+  from public.boosts
+  where wallet_id = p_wallet_id and expires_at > now();
+$$;
+
+-- Helper: hours already mined in the current UTC daily cycle
+create or replace function public._hours_mined_today(p_wallet_id uuid)
+returns numeric
+language sql
+stable
+security definer
+as $$
+  select coalesce(sum(
+    case when status = 'completed'
+      then credited_hours
+      else greatest(0, extract(epoch from (least(now(), end_time) - start_time)) / 3600.0)
+    end
+  ), 0)
+  from public.mining_sessions
+  where wallet_id = p_wallet_id
+    and (start_time at time zone 'utc')::date = (now() at time zone 'utc')::date;
+$$;
+
+-- Helper: Coopoints earned (credited) today
+create or replace function public._points_earned_today(p_wallet_id uuid)
+returns numeric
+language sql
+stable
+security definer
+as $$
+  select coalesce(sum(reward_amount), 0)
+  from public.mining_sessions
+  where wallet_id = p_wallet_id
+    and status = 'completed'
+    and (created_at at time zone 'utc')::date = (now() at time zone 'utc')::date;
+$$;
+
+-- A. Register or Login by Private Key (new accounts start at ZERO)
 create or replace function public.rpc_authenticate_wallet(
   p_private_key text,
   p_address text default null
@@ -129,119 +253,184 @@ as $$
 declare
   v_key_hash text;
   v_wallet public.wallets%rowtype;
-  v_new_address text;
 begin
-  -- Simple deterministic sha256 hash
   v_key_hash := encode(digest(p_private_key, 'sha256'), 'hex');
 
   select * into v_wallet from public.wallets where private_key_hash = v_key_hash limit 1;
 
   if found then
-    update public.wallets set last_active_at = now() where id = v_wallet.id;
+    update public.wallets set last_active_at = now() where id = v_wallet.id
+    returning * into v_wallet;
     return to_jsonb(v_wallet);
   end if;
 
-  -- If not found and address provided, create new account with default welcome balances
-  if p_address is not null then
-    v_new_address := p_address;
-  else
-    v_new_address := '0x' || substring(v_key_hash from 1 for 40);
-  end if;
-
   insert into public.wallets (
-    address,
-    private_key_hash,
-    coop_balance,
-    cooptoken_balance,
-    mining_power_level,
-    current_boost_pct,
-    total_boost_reward,
-    total_sent,
-    total_received
+    address, private_key_hash
   ) values (
-    v_new_address,
-    v_key_hash,
-    1234.5600, -- Initial demo starting balance matching mockup ($245.68)
-    250.0000,  -- Initial Cooptoken mining balance
-    1,
-    15,        -- 15% current boost
-    0.0000,
-    542.1200,
-    1876.4500
+    coalesce(p_address, '0x' || substring(v_key_hash from 1 for 40)),
+    v_key_hash
   ) returning * into v_wallet;
-
-  -- Create initial active mining session (12 hours)
-  insert into public.mining_sessions (
-    wallet_id,
-    start_time,
-    end_time,
-    duration_hours,
-    base_reward,
-    boost_reward,
-    total_reward,
-    status
-  ) values (
-    v_wallet.id,
-    now(),
-    now() + interval '12 hours',
-    12,
-    50.0000,
-    8.3200,
-    58.3200,
-    'mining'
-  );
 
   return to_jsonb(v_wallet);
 end;
 $$;
 
--- B. Start Mining Session
-create or replace function public.rpc_start_mining(
-  p_wallet_id uuid
-)
+
+-- B. Mining status (single source of truth for the Mining screen)
+create or replace function public.rpc_mining_status(p_wallet_id uuid)
 returns jsonb
 language plpgsql
+stable
 security definer
 as $$
 declare
   v_wallet public.wallets%rowtype;
-  v_existing public.mining_sessions%rowtype;
+  v_settings public.admin_settings%rowtype;
   v_session public.mining_sessions%rowtype;
-  v_boost_bonus numeric(20, 4) := 0;
+  v_boost numeric;
+  v_hours numeric;
+  v_points numeric;
 begin
   select * into v_wallet from public.wallets where id = p_wallet_id;
   if not found then
     raise exception 'Wallet not found';
   end if;
 
-  -- Check if already active
-  select * into v_existing from public.mining_sessions 
-  where wallet_id = p_wallet_id and status in ('mining', 'ready_to_claim') 
+  select * into v_settings from public.admin_settings where id = 'default';
+  v_boost := public._active_boost_pct(p_wallet_id, v_settings.boosts_stackable);
+  v_hours := public._hours_mined_today(p_wallet_id);
+  v_points := public._points_earned_today(p_wallet_id);
+
+  select * into v_session from public.mining_sessions
+  where wallet_id = p_wallet_id and status = 'mining'
   order by created_at desc limit 1;
 
-  if found and v_existing.status = 'mining' and v_existing.end_time > now() then
+  return jsonb_build_object(
+    'wallet', to_jsonb(v_wallet),
+    'session', case when v_session.id is null then null else to_jsonb(v_session) end,
+    'rate', v_settings.base_mining_rate,
+    'boost_pct', v_boost,
+    'hours_mined_today', v_hours,
+    'points_earned_today', v_points,
+    'daily_hours', v_settings.daily_mining_hours,
+    'daily_limit_points', v_settings.daily_mining_hours * v_settings.base_mining_rate,
+    'next_reset_utc', date_trunc('day', now() at time zone 'utc') + interval '1 day',
+    'mining_enabled', v_settings.mining_enabled
+  );
+end;
+$$;
+
+-- C. Start mining (server computes session end from remaining daily quota)
+create or replace function public.rpc_start_mining(p_wallet_id uuid)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+  v_settings public.admin_settings%rowtype;
+  v_existing public.mining_sessions%rowtype;
+  v_session public.mining_sessions%rowtype;
+  v_boost numeric;
+  v_hours numeric;
+  v_remaining_hours numeric;
+begin
+  select * into v_settings from public.admin_settings where id = 'default';
+  if not v_settings.mining_enabled then
+    raise exception 'Mining is currently disabled';
+  end if;
+
+
+-- D. Stop mining & claim (reward computed entirely server-side)
+create or replace function public.rpc_stop_mining(p_wallet_id uuid)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+  v_wallet public.wallets%rowtype;
+  v_session public.mining_sessions%rowtype;
+  v_elapsed_hours numeric;
+  v_reward numeric;
+  v_tx_hash text;
+begin
+  select * into v_session from public.mining_sessions
+  where wallet_id = p_wallet_id and status = 'mining'
+  order by created_at desc limit 1
+  for update;
+
+  if not found then
+    raise exception 'No active mining session';
+  end if;
+
+  -- Server clock is authoritative; client time is never used
+  v_elapsed_hours := greatest(0,
+    extract(epoch from (least(now(), v_session.end_time) - v_session.start_time)) / 3600.0);
+  v_reward := round(v_elapsed_hours * v_session.base_rate * (1 + v_session.boost_pct / 100.0), 4);
+
+  if v_reward <= 0 then
+    raise exception 'Nothing to claim yet';
+  end if;
+
+  update public.mining_sessions
+  set status = 'completed',
+      credited_hours = round(v_elapsed_hours, 4),
+      reward_amount = v_reward
+  where id = v_session.id;
+
+  update public.wallets
+  set cooptoken_balance = cooptoken_balance + v_reward
+  where id = p_wallet_id
+  returning * into v_wallet;
+
+  v_tx_hash := '0x' || md5(random()::text || clock_timestamp()::text);
+  insert into public.transactions (
+    wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
+  ) values (
+    p_wallet_id,
+    'mining',
+    v_reward,
+    'Coopoints',
+    'Mining Pool',
+    0,
+    'Complete',
+    v_tx_hash,
+    'Mining reward: ' || round(v_elapsed_hours, 2) || 'h at ' || v_session.base_rate::text ||
+      ' Coopoints/hour (boost +' || v_session.boost_pct::text || '%)'
+  );
+
+  return jsonb_build_object(
+    'wallet', to_jsonb(v_wallet),
+    'session', (select to_jsonb(s) from public.mining_sessions s where s.id = v_session.id),
+    'reward', v_reward,
+    'tx_hash', v_tx_hash
+  );
+end;
+$$;
+
+  select * into v_existing from public.mining_sessions
+  where wallet_id = p_wallet_id and status = 'mining'
+  order by created_at desc limit 1;
+
+  if found then
     return to_jsonb(v_existing);
   end if;
 
-  v_boost_bonus := (50.0000 * v_wallet.current_boost_pct / 100.0) + v_wallet.total_boost_reward;
+  v_hours := public._hours_mined_today(p_wallet_id);
+  v_remaining_hours := v_settings.daily_mining_hours - v_hours;
+  if v_remaining_hours <= 0 then
+    raise exception 'Daily mining limit reached. Mining resets at 00:00 UTC';
+  end if;
+
+  v_boost := public._active_boost_pct(p_wallet_id, v_settings.boosts_stackable);
 
   insert into public.mining_sessions (
-    wallet_id,
-    start_time,
-    end_time,
-    duration_hours,
-    base_reward,
-    boost_reward,
-    total_reward,
-    status
+    wallet_id, start_time, end_time, base_rate, boost_pct, status
   ) values (
     p_wallet_id,
     now(),
-    now() + interval '12 hours',
-    12,
-    50.0000,
-    v_boost_bonus,
-    50.0000 + v_boost_bonus,
+    now() + make_interval(hours => v_remaining_hours),
+    v_settings.base_mining_rate,
+    v_boost,
     'mining'
   ) returning * into v_session;
 
@@ -249,69 +438,13 @@ begin
 end;
 $$;
 
--- C. Claim Mining Reward
-create or replace function public.rpc_claim_mining_reward(
-  p_wallet_id uuid,
-  p_session_id uuid
-)
-returns jsonb
-language plpgsql
-security definer
-as $$
-declare
-  v_session public.mining_sessions%rowtype;
-  v_wallet public.wallets%rowtype;
-  v_tx_hash text;
-begin
-  select * into v_session from public.mining_sessions 
-  where id = p_session_id and wallet_id = p_wallet_id;
 
-  if not found then
-    raise exception 'Mining session not found';
-  end if;
-
-  if v_session.status = 'claimed' then
-    raise exception 'Mining reward already claimed';
-  end if;
-
-  -- Mark claimed
-  update public.mining_sessions
-  set status = 'claimed', claimed_at = now()
-  where id = v_session.id;
-
-  -- Credit Cooptoken to wallet server-side
-  update public.wallets
-  set cooptoken_balance = cooptoken_balance + v_session.total_reward
-  where id = p_wallet_id
-  returning * into v_wallet;
-
-  -- Record transaction
-  v_tx_hash := '0x' || md5(random()::text || clock_timestamp()::text);
-  insert into public.transactions (
-    wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
-  ) values (
-    p_wallet_id,
-    'mining',
-    v_session.total_reward,
-    'Cooptoken',
-    'Mining Pool',
-    0,
-    'Complete',
-    v_tx_hash,
-    '12-hour session mining payout'
-  );
-
-  return jsonb_build_object(
-    'wallet', to_jsonb(v_wallet),
-    'reward_claimed', v_session.total_reward
-  );
-end;
-$$;
-
--- D. Server-side Swap (1,000 Cooptoken = 1.000 COOP)
+-- E. Bidirectional swap (atomic, pool-checked, anti-replay, rate-limited)
 create or replace function public.rpc_execute_swap(
   p_wallet_id uuid,
-  p_cooptoken_amount numeric
+  p_direction text,
+  p_amount numeric,
+  p_client_nonce text
 )
 returns jsonb
 language plpgsql
@@ -319,11 +452,44 @@ security definer
 as $$
 declare
   v_wallet public.wallets%rowtype;
-  v_coop_received numeric(20, 4);
+  v_settings public.admin_settings%rowtype;
+  v_points_leg numeric(20, 4);
+  v_coop_leg numeric(20, 4);
+  v_points_today numeric(20, 4);
   v_tx_hash text;
 begin
-  if p_cooptoken_amount < 1000 then
-    raise exception 'Minimum swap amount is 1,000 Cooptoken';
+  if p_amount is null or p_amount <= 0 then
+    raise exception 'Swap amount must be greater than zero';
+  end if;
+  if p_client_nonce is null or length(p_client_nonce) < 8 then
+    raise exception 'Invalid request';
+  end if;
+  if p_direction not in ('points_to_coop', 'coop_to_points') then
+    raise exception 'Invalid swap direction';
+  end if;
+
+  select * into v_settings from public.admin_settings where id = 'default';
+  if not v_settings.conversion_enabled then
+    raise exception 'Conversion is currently disabled';
+  end if;
+
+  -- Anti-replay: each nonce can only ever be used once
+  begin
+    insert into public.swap_requests (wallet_id, client_nonce)
+    values (p_wallet_id, p_client_nonce);
+  exception when unique_violation then
+    raise exception 'Duplicate or replayed request rejected';
+  end;
+
+  -- Rapid repeated conversion protection
+  if exists (
+    select 1 from public.transactions
+    where wallet_id = p_wallet_id
+      and tx_type = 'swap'
+      and status = 'Complete'
+      and created_at > now() - make_interval(secs => v_settings.swap_rate_limit_seconds)
+  ) then
+    raise exception 'Please wait a few seconds between conversions';
   end if;
 
   select * into v_wallet from public.wallets where id = p_wallet_id for update;
@@ -331,45 +497,186 @@ begin
     raise exception 'Wallet not found';
   end if;
 
-  if v_wallet.cooptoken_balance < p_cooptoken_amount then
-    raise exception 'Insufficient Cooptoken balance for swap';
+  if p_direction = 'points_to_coop' then
+    v_points_leg := round(p_amount, 4);
+    v_coop_leg := round(v_points_leg / v_settings.points_per_coop, 4);
+
+    if v_wallet.cooptoken_balance < v_points_leg then
+      raise exception 'Insufficient Coopoints balance';
+    end if;
+
+    -- Per-user daily conversion limit
+    select coalesce(sum(points_amount), 0) into v_points_today
+    from public.transactions
+    where wallet_id = p_wallet_id
+      and tx_type = 'swap' and direction = 'points_to_coop' and status = 'Complete'
+      and (created_at at time zone 'utc')::date = (now() at time zone 'utc')::date;
+    if v_points_today + v_points_leg > v_settings.daily_conversion_limit_points then
+      raise exception 'Daily conversion limit reached. You can convert up to '
+        || v_settings.daily_conversion_limit_points::text || ' Coopoints per day';
+    end if;
+
+    -- Controlled emission pool check (points are NEVER touched on failure)
+    if v_settings.remaining_coop_reward_pool < v_coop_leg then
+      raise exception 'COOP conversion is temporarily unavailable. The current reward allocation has been reached. Your Coopoints remain safe in your account.';
+    end if;
+
+    -- Atomic: debit points, credit COOP, decrement pool — all or nothing
+    update public.wallets
+    set cooptoken_balance = cooptoken_balance - v_points_leg,
+        coop_balance = coop_balance + v_coop_leg
+    where id = p_wallet_id
+      and cooptoken_balance >= v_points_leg
+    returning * into v_wallet;
+    if not found then
+      raise exception 'Insufficient Coopoints balance';
+    end if;
+
+    update public.admin_settings
+    set remaining_coop_reward_pool = remaining_coop_reward_pool - v_coop_leg
+    where id = 'default';
+
+    v_tx_hash := '0x' || md5(random()::text || clock_timestamp()::text);
+    insert into public.transactions (
+      wallet_id, tx_type, amount, currency, points_amount, direction,
+      counterparty, fee, status, tx_hash, notes
+    ) values (
+      p_wallet_id, 'swap', v_coop_leg, 'COOP', v_points_leg, 'points_to_coop',
+      'COOP Reward Pool', 0, 'Complete', v_tx_hash,
+      'Converted ' || v_points_leg::text || ' Coopoints into ' || v_coop_leg::text || ' COOP'
+    );
+
+    return jsonb_build_object('wallet', to_jsonb(v_wallet), 'tx_hash', v_tx_hash,
+      'points', v_points_leg, 'coop', v_coop_leg);
   end if;
 
-  -- Calculate exact 1000 : 1 conversion
-  v_coop_received := round(p_cooptoken_amount / 1000.0, 4);
+  -- coop_to_points
+  v_coop_leg := round(p_amount, 4);
+  v_points_leg := round(v_coop_leg * v_settings.points_per_coop, 4);
 
-  -- Execute balance adjustments atomically
+  if v_wallet.coop_balance < v_coop_leg then
+    raise exception 'Insufficient COOP balance';
+  end if;
+
+  -- Atomic: debit COOP, credit points, return COOP to the reward pool
   update public.wallets
-  set cooptoken_balance = cooptoken_balance - p_cooptoken_amount,
-      coop_balance = coop_balance + v_coop_received
+  set coop_balance = coop_balance - v_coop_leg,
+      cooptoken_balance = cooptoken_balance + v_points_leg
   where id = p_wallet_id
+    and coop_balance >= v_coop_leg
   returning * into v_wallet;
+  if not found then
+    raise exception 'Insufficient COOP balance';
+  end if;
+
+  update public.admin_settings
+  set remaining_coop_reward_pool = remaining_coop_reward_pool + v_coop_leg
+  where id = 'default';
 
   v_tx_hash := '0x' || md5(random()::text || clock_timestamp()::text);
-
   insert into public.transactions (
-    wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
+    wallet_id, tx_type, amount, currency, points_amount, direction,
+    counterparty, fee, status, tx_hash, notes
   ) values (
-    p_wallet_id,
-    'swap',
-    v_coop_received,
-    'COOP',
-    'Coop Swap DEX',
-    0.0,
-    'Complete',
-    v_tx_hash,
-    'Swapped ' || p_cooptoken_amount::text || ' Cooptoken to ' || v_coop_received::text || ' COOP'
+    p_wallet_id, 'swap', v_coop_leg, 'COOP', v_points_leg, 'coop_to_points',
+    'COOP Reward Pool', 0, 'Complete', v_tx_hash,
+    'Converted ' || v_coop_leg::text || ' COOP into ' || v_points_leg::text || ' Coopoints'
   );
 
-  return jsonb_build_object(
-    'wallet', to_jsonb(v_wallet),
-    'coop_received', v_coop_received,
-    'tx_hash', v_tx_hash
-  );
+  return jsonb_build_object('wallet', to_jsonb(v_wallet), 'tx_hash', v_tx_hash,
+    'points', v_points_leg, 'coop', v_coop_leg);
 end;
 $$;
 
--- E. Server-side Send COOP
+
+-- F. Public settings (rates, tiers, pool, feature flags)
+create or replace function public.rpc_get_settings()
+returns jsonb
+language sql
+stable
+security definer
+as $$
+  select jsonb_build_object(
+    'base_mining_rate', base_mining_rate,
+    'daily_mining_hours', daily_mining_hours,
+    'points_per_coop', points_per_coop,
+    'daily_conversion_limit_points', daily_conversion_limit_points,
+    'total_coop_reward_pool', total_coop_reward_pool,
+    'remaining_coop_reward_pool', remaining_coop_reward_pool,
+    'mining_enabled', mining_enabled,
+    'conversion_enabled', conversion_enabled,
+    'boost_purchases_enabled', boost_purchases_enabled,
+    'boosts_stackable', boosts_stackable,
+    'swap_rate_limit_seconds', swap_rate_limit_seconds,
+    'boost_tiers', boost_tiers
+  )
+  from public.admin_settings where id = 'default';
+$$;
+
+-- G. Admin update settings (requires admin key; sha256 verified server-side)
+create or replace function public.rpc_admin_set_settings(
+  p_admin_key text,
+  p_updates jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+as $$
+begin
+  if coalesce((select admin_key_hash from public.admin_settings where id = 'default'), '') = '' then
+    raise exception 'Admin is not configured. Set admin_key_hash first.';
+  end if;
+  if encode(digest(p_admin_key, 'sha256'), 'hex') <> (select admin_key_hash from public.admin_settings where id = 'default') then
+    raise exception 'Unauthorized';
+  end if;
+
+  if p_updates ? 'base_mining_rate' then
+    update public.admin_settings set base_mining_rate = (p_updates->>'base_mining_rate')::numeric where id = 'default';
+  end if;
+  if p_updates ? 'daily_mining_hours' then
+    update public.admin_settings set daily_mining_hours = (p_updates->>'daily_mining_hours')::numeric where id = 'default';
+  end if;
+  if p_updates ? 'points_per_coop' then
+    update public.admin_settings set points_per_coop = (p_updates->>'points_per_coop')::numeric where id = 'default';
+  end if;
+  if p_updates ? 'daily_conversion_limit_points' then
+    update public.admin_settings set daily_conversion_limit_points = (p_updates->>'daily_conversion_limit_points')::numeric where id = 'default';
+  end if;
+  if p_updates ? 'total_coop_reward_pool' then
+    update public.admin_settings set total_coop_reward_pool = (p_updates->>'total_coop_reward_pool')::numeric where id = 'default';
+  end if;
+  if p_updates ? 'remaining_coop_reward_pool' then
+    update public.admin_settings set remaining_coop_reward_pool = (p_updates->>'remaining_coop_reward_pool')::numeric where id = 'default';
+  end if;
+  if p_updates ? 'mining_enabled' then
+    update public.admin_settings set mining_enabled = (p_updates->>'mining_enabled')::boolean where id = 'default';
+  end if;
+  if p_updates ? 'conversion_enabled' then
+    update public.admin_settings set conversion_enabled = (p_updates->>'conversion_enabled')::boolean where id = 'default';
+  end if;
+  if p_updates ? 'boost_purchases_enabled' then
+    update public.admin_settings set boost_purchases_enabled = (p_updates->>'boost_purchases_enabled')::boolean where id = 'default';
+  end if;
+  if p_updates ? 'boosts_stackable' then
+    update public.admin_settings set boosts_stackable = (p_updates->>'boosts_stackable')::boolean where id = 'default';
+  end if;
+  if p_updates ? 'swap_rate_limit_seconds' then
+    update public.admin_settings set swap_rate_limit_seconds = (p_updates->>'swap_rate_limit_seconds')::integer where id = 'default';
+  end if;
+  if p_updates ? 'boost_tiers' then
+    update public.admin_settings set boost_tiers = p_updates->'boost_tiers' where id = 'default';
+  end if;
+  if p_updates ? 'admin_key_hash' then
+    update public.admin_settings set admin_key_hash = p_updates->>'admin_key_hash' where id = 'default';
+  end if;
+
+  update public.admin_settings set updated_at = now() where id = 'default';
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+
+-- H. Send COOP (server-side, atomic, internal transfers credited)
 create or replace function public.rpc_execute_send(
   p_wallet_id uuid,
   p_recipient text,
@@ -401,31 +708,25 @@ begin
     raise exception 'Insufficient COOP balance (including 0.02 network fee)';
   end if;
 
-  -- Deduct from sender
   update public.wallets
   set coop_balance = coop_balance - v_total_deduct,
       total_sent = total_sent + p_amount
   where id = p_wallet_id
+    and coop_balance >= v_total_deduct
   returning * into v_wallet;
+  if not found then
+    raise exception 'Insufficient COOP balance';
+  end if;
 
   v_tx_hash := '0x' || md5(random()::text || clock_timestamp()::text);
 
-  -- Record sender transaction
   insert into public.transactions (
     wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
   ) values (
-    p_wallet_id,
-    'send',
-    p_amount,
-    'COOP',
-    p_recipient,
-    v_fee,
-    'Complete',
-    v_tx_hash,
+    p_wallet_id, 'send', p_amount, 'COOP', p_recipient, v_fee, 'Complete', v_tx_hash,
     'Sent ' || p_amount::text || ' COOP to ' || p_recipient
   );
 
-  -- If recipient is an internal wallet, credit them
   select * into v_recipient_wallet from public.wallets where address = p_recipient for update;
   if found then
     update public.wallets
@@ -436,85 +737,16 @@ begin
     insert into public.transactions (
       wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
     ) values (
-      v_recipient_wallet.id,
-      'receive',
-      p_amount,
-      'COOP',
-      v_wallet.address,
-      0,
-      'Complete',
-      v_tx_hash,
+      v_recipient_wallet.id, 'receive', p_amount, 'COOP', v_wallet.address, 0, 'Complete', v_tx_hash,
       'Received ' || p_amount::text || ' COOP from ' || v_wallet.address
     );
   end if;
 
-  return jsonb_build_object(
-    'wallet', to_jsonb(v_wallet),
-    'tx_hash', v_tx_hash
-  );
+  return jsonb_build_object('wallet', to_jsonb(v_wallet), 'tx_hash', v_tx_hash);
 end;
 $$;
 
--- F. Server-side Boost Purchase
-create or replace function public.rpc_purchase_boost(
-  p_wallet_id uuid,
-  p_tier_name text,
-  p_cost_usd numeric,
-  p_bonus_reward numeric,
-  p_boost_pct integer
-)
-returns jsonb
-language plpgsql
-security definer
-as $$
-declare
-  v_wallet public.wallets%rowtype;
-  v_tx_hash text;
-begin
-  select * into v_wallet from public.wallets where id = p_wallet_id for update;
-  if not found then
-    raise exception 'Wallet not found';
-  end if;
-
-  -- Record boost purchase
-  insert into public.boost_purchases (
-    wallet_id, tier_name, cost_usd, bonus_reward, boost_pct
-  ) values (
-    p_wallet_id, p_tier_name, p_cost_usd, p_bonus_reward, p_boost_pct
-  );
-
-  -- Increment user boost
-  update public.wallets
-  set current_boost_pct = current_boost_pct + p_boost_pct,
-      total_boost_reward = total_boost_reward + p_bonus_reward,
-      mining_power_level = mining_power_level + 1
-  where id = p_wallet_id
-  returning * into v_wallet;
-
-  v_tx_hash := '0x' || md5(random()::text || clock_timestamp()::text);
-
-  insert into public.transactions (
-    wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
-  ) values (
-    p_wallet_id,
-    'boost',
-    p_bonus_reward,
-    'Cooptoken',
-    'COOP Mining Boost',
-    0,
-    'Complete',
-    v_tx_hash,
-    'Purchased ' || p_tier_name || ' (+' || p_bonus_reward::text || ' Mining Boost)'
-  );
-
-  return jsonb_build_object(
-    'wallet', to_jsonb(v_wallet),
-    'tx_hash', v_tx_hash
-  );
-end;
-$$;
-
--- G. Server-side Task Completion & Reward
+-- I. Task completion & reward (server-side)
 create or replace function public.rpc_claim_task_reward(
   p_wallet_id uuid,
   p_task_id text
@@ -525,7 +757,6 @@ security definer
 as $$
 declare
   v_task public.tasks%rowtype;
-  v_user_task public.user_tasks%rowtype;
   v_wallet public.wallets%rowtype;
   v_tx_hash text;
 begin
@@ -534,19 +765,18 @@ begin
     raise exception 'Task not found';
   end if;
 
-  select * into v_user_task from public.user_tasks where wallet_id = p_wallet_id and task_id = p_task_id;
-
-  if found and v_user_task.status = 'claimed' then
+  if exists (
+    select 1 from public.user_tasks
+    where wallet_id = p_wallet_id and task_id = p_task_id and status = 'claimed'
+  ) then
     raise exception 'Task already claimed';
   end if;
 
-  -- Upsert status to claimed
   insert into public.user_tasks (wallet_id, task_id, status, completed_at, claimed_at)
   values (p_wallet_id, p_task_id, 'claimed', now(), now())
   on conflict (wallet_id, task_id)
   do update set status = 'claimed', claimed_at = now();
 
-  -- Credit Cooptoken
   update public.wallets
   set cooptoken_balance = cooptoken_balance + v_task.reward_cooptoken
   where id = p_wallet_id
@@ -557,20 +787,22 @@ begin
   insert into public.transactions (
     wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
   ) values (
-    p_wallet_id,
-    'task',
-    v_task.reward_cooptoken,
-    'Cooptoken',
-    v_task.title,
-    0,
-    'Complete',
-    v_tx_hash,
+    p_wallet_id, 'task', v_task.reward_cooptoken, 'Coopoints', v_task.title, 0, 'Complete', v_tx_hash,
     'Completed task: ' || v_task.title
   );
 
-  return jsonb_build_object(
-    'wallet', to_jsonb(v_wallet),
-    'task_reward', v_task.reward_cooptoken
-  );
+  return jsonb_build_object('wallet', to_jsonb(v_wallet), 'task_reward', v_task.reward_cooptoken);
 end;
 $$;
+
+-- Grant execute on RPCs to the anon role (used by the web app)
+grant execute on function public.rpc_authenticate_wallet(text, text) to anon, authenticated;
+grant execute on function public.rpc_mining_status(uuid) to anon, authenticated;
+grant execute on function public.rpc_start_mining(uuid) to anon, authenticated;
+grant execute on function public.rpc_stop_mining(uuid) to anon, authenticated;
+grant execute on function public.rpc_execute_swap(uuid, text, numeric, text) to anon, authenticated;
+grant execute on function public.rpc_get_settings() to anon, authenticated;
+grant execute on function public.rpc_admin_set_settings(text, jsonb) to anon, authenticated;
+grant execute on function public.rpc_execute_send(uuid, text, numeric) to anon, authenticated;
+grant execute on function public.rpc_claim_task_reward(uuid, text) to anon, authenticated;
+

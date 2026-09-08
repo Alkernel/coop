@@ -1,4 +1,4 @@
-# COOP Wallet - Mine. Trade. Grow.
+﻿# COOP Wallet - Mine. Trade. Grow.
 
 A decentralized pre-TGE mining and non-custodial wallet web app built with React + Vite + TypeScript, and backed by Supabase.
 
@@ -38,18 +38,27 @@ Everything is already configured (`vercel.json`, `.gitignore`, `vite.config.ts`)
 
 ## Set up Supabase (the database tables)
 
-Your repo already contains the full schema at **`supabase/schema.sql`** — it creates **6 tables** and **7 stored-procedure functions**. Run it once in your Supabase project:
+Your repo contains the complete schema at **`supabase/schema.sql`** — it creates all tables and server-side RPC functions (mining, swap, send, tasks, admin settings, reward pool). Run it once in your Supabase project:
 
 1. Open the Supabase Dashboard → select your project → **SQL Editor**.
-2. Click **New query**, open `supabase/schema.sql` from this repo,and paste the whole filein:
-3. Press **Run**. You will see output like `CREATE TABLE` and `CREATE FUNCTION`。
-4. Done. Verify with:
-   ```sql
-   select * from public.wallets;
-   select * from public.tasks;
-   ```
+2. Click **New query**, paste the whole `supabase/schema.sql` file, press **Run**.
+3. Done. All balances, mining sessions and swaps are executed by database functions using the **server clock** — the browser is never the source of truth.
 
-> I cannot run this for you remotely — it must run **inside your Supabase project**, because it needs database/owner access that only your dashboard or service-role key has. The schema is complete and verified against what the app expects。</p>
+### Admin configuration
+
+All economic parameters (mining rate, daily hours, conversion ratio, COOP reward pool, boost tiers, feature flags) live in the `admin_settings` table and can only be changed by an authorized admin key:
+
+1. Choose a strong admin secret and compute its SHA-256 hash (e.g. in PowerShell:
+   `"%YOUR-SECRET%" | Out-Null; -join ([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes("%YOUR-SECRET%")) | ForEach-Object { $_.ToString("x2") })`).
+2. In the SQL editor run: `update admin_settings set admin_key_hash = '<sha256-hex>';`
+3. The app's `dbService.adminSetSettings(adminKey, updates)` RPC verifies the hash server-side; anything else is rejected.
+
+### Key rules enforced server-side
+
+- Mining: 50 Coopoints/hour base (configurable), max 12 hours per UTC day (600/day). Start/stop sessions persist in the DB; rewards are computed with the server clock when the user claims.
+- Boosts (Starter/Plus/Pro/Max) increase mining rate only — they never bypass the 12-hour daily cap. USDT boost purchase is **Coming Soon** (not live).
+- Swap: 10 Coopoints = 1 COOP (1,000 → 100), bidirectional, atomic, checked against the admin-controlled COOP reward pool; failed conversions never touch the user's points.
+- Anti-abuse: one-time swap nonces, per-second rate limit, daily conversion limit, RLS is read-only for clients — all writes go through security-definer RPCs.
 
 
 
@@ -59,14 +68,17 @@ There is **no separate `users` table on purpose** — the **wallet record is you
 
 | Table | Purpose |
 |---|---|
-| `public.wallets` | The user table. One row per account(public address, hashed private key, COOP/Cooptoken balances, PIN, settings). |
-| `public.mining_sessions` | 12-hour mining cycles per wallet. |
-| `public.boost_purchases` | Paid price-boost upgrades. |
+| `public.wallets` | The user table. One row per account (public address, hashed private key, COOP/Coopoints balances, PIN, settings). |
+| `public.admin_settings` | All economic parameters + the COOP reward/emission pool (admin-controlled). |
+| `public.mining_sessions` | Mining sessions per wallet with server timestamps and daily-quota caps. |
+| `public.boosts` | Active boost grants (tier, pct, start, expiry). |
+| `public.boost_purchases` | Boost purchase records (USDT payments — pending/Coming Soon). |
+| `public.swap_requests` | One-time swap nonces (anti-replay / duplicate protection). |
 | `public.tasks` | The always-available task catalog (seeded with 5 tasks). |
-| `public.user_tasks` | Per-wallet task progress(who claimed what)。 |
-| `public.transactions` | Full send/swap/mining/boost/task history. |
+| `public.user_tasks` | Per-wallet task progress (who claimed what). |
+| `public.transactions` | Full send/swap/mining/boost/task history with points leg + direction. |
 
-The RPC stored procedures (`rpc_authenticate_wallet`, `rpc_start_mining`, `rpc_claim_mining_reward`, `rpc_execute_swap`, `rpc_execute_send`, `rpc_purchase_boost`, `rpc_claim_task_reward`) handle atomic,server-validated writes,and RLS is enabled with permissive policies for the demo。</p>
+Server-side RPCs (`rpc_authenticate_wallet`, `rpc_mining_status`, `rpc_start_mining`, `rpc_stop_mining`, `rpc_execute_swap`, `rpc_get_settings`, `rpc_admin_set_settings`, `rpc_execute_send`, `rpc_claim_task_reward`) handle all atomic, server-validated writes. RLS is **read-only** for clients — balances and rewards can never be modified from the browser.
 
 
 
@@ -86,4 +98,4 @@ Pre-requisite for local Supabase: a `.env.local` with `VITE_SUPABASE_URL` and `V
 ## Security note
 
 - The private key never leaves the browser for ops — only its **SHA-256 hash** is stored in `public.wallets.private_key_hash`.
-- If Supabase is unreachable or not set up,the app gracefully falls back to **localStorage**,so it still works offline for demos。
+- The browser is never the source of truth for balances, mining or swaps: only the private key (for session restore) and UI preferences are kept locally. All financial state lives in Supabase and is validated by server-side RPC functions. If the backend is unreachable, the app shows an error instead of faking data.

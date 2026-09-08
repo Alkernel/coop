@@ -8,7 +8,8 @@ import {
   ArrowLeftRight, 
   History, 
   Settings, 
-  HelpCircle 
+  HelpCircle,
+  Shield 
 } from 'lucide-react';
 import { CoopLogo } from '../components/CoopLogo';
 import { useWallet } from '../context/WalletContext';
@@ -31,6 +32,7 @@ export const MenuScreen: React.FC = () => {
     { title: 'Swap', icon: <ArrowLeftRight size={19} />, screen: 'swap' },
     { title: 'History', icon: <History size={19} />, screen: 'history' },
     { title: 'Settings', icon: <Settings size={19} />, screen: 'settings' },
+    { title: 'Admin Panel', icon: <Shield size={19} />, screen: 'admin' },
     { title: 'Help & Support', icon: <HelpCircle size={19} />, screen: 'help_support' }
   ];
 

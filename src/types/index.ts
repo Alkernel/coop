@@ -16,19 +16,18 @@ export type ScreenName =
   | 'help_support'
   | 'about'
   | 'security'
+  | 'admin'
   | 'locked';
 
-export type Currency = 'COOP' | 'Cooptoken';
+export type Currency = 'COOP' | 'Coopoints';
+export type SwapDirection = 'points_to_coop' | 'coop_to_points';
 
 export interface WalletAccount {
   id: string;
   address: string;
   privateKey: string;
-  coopBalance: number;       // Liquid COOP coin (1,000 Cooptoken = 1 COOP)
-  cooptokenBalance: number;  // Pre-TGE mining balance
-  miningPowerLevel: number;
-  currentBoostPct: number;
-  totalBoostReward: number;
+  coopBalance: number;        // Liquid COOP (only via conversion from Coopoints)
+  cooptokenBalance: number;   // Coopoints — internal reward points
   totalSent: number;
   totalReceived: number;
   pinCode: string;
@@ -41,23 +40,47 @@ export interface WalletAccount {
 export interface MiningSession {
   id: string;
   walletId: string;
-  startTime: number;
-  endTime: number;
-  durationHours: number;
-  baseReward: number;        // 50 Cooptoken per 12 hours
-  boostReward: number;       // Extra reward based on purchased boosts
-  totalReward: number;       // base + boost
-  status: 'mining' | 'ready_to_claim' | 'claimed';
-  claimedAt?: number;
+  startTime: number;          // ms epoch (server time)
+  endTime: number;            // ms epoch — server-computed daily quota cap
+  baseRate: number;           // Coopoints per hour
+  boostPct: number;
+  status: 'mining' | 'completed';
+}
+
+export interface MiningStatus {
+  wallet: WalletAccount;
+  session: MiningSession | null;
+  rate: number;               // Coopoints per hour (base)
+  boostPct: number;           // active boost percentage
+  hoursMinedToday: number;
+  pointsEarnedToday: number;
+  dailyHours: number;         // max hours per daily cycle
+  dailyLimitPoints: number;   // max Coopoints per daily cycle
+  nextResetUtc: number;       // ms epoch
+  miningEnabled: boolean;
 }
 
 export interface BoostTier {
   id: string;
   name: string;
-  costUsd: number;
-  rewardBonus: number;       // Added to mining session (+100, +300, +700, +1600)
-  boostPct: number;          // Added to boost %
-  popular?: boolean;
+  priceUsd: number;
+  boostPct: number;
+  durationDays: number;
+}
+
+export interface AppSettings {
+  baseMiningRate: number;
+  dailyMiningHours: number;
+  pointsPerCoop: number;      // Coopoints per 1 COOP (10)
+  dailyConversionLimitPoints: number;
+  totalCoopRewardPool: number;
+  remainingCoopRewardPool: number;
+  miningEnabled: boolean;
+  conversionEnabled: boolean;
+  boostPurchasesEnabled: boolean;
+  boostsStackable: boolean;
+  swapRateLimitSeconds: number;
+  boostTiers: BoostTier[];
 }
 
 export interface TaskItem {
@@ -74,8 +97,10 @@ export interface TaskItem {
 export interface Transaction {
   id: string;
   txType: 'send' | 'receive' | 'swap' | 'mining' | 'boost' | 'task';
-  amount: number;
+  amount: number;             // COOP leg for swaps
   currency: Currency;
+  pointsAmount?: number;      // Coopoints leg for swaps
+  direction?: SwapDirection;
   counterparty?: string;
   fee?: number;
   status: 'Complete' | 'Pending' | 'Failed';

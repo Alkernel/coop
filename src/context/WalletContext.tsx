@@ -1,13 +1,15 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { 
   ScreenName, 
   WalletAccount, 
-  MiningSession, 
+  MiningStatus, 
   Transaction, 
   TaskItem, 
-  AppNotification 
+  AppNotification,
+  AppSettings,
+  SwapDirection
 } from '../types';
-import { dbService, BOOST_TIERS } from '../services/supabase';
+import { dbService, isSupabaseConfigured } from '../services/supabase';
 import { generateSecurePrivateKey, isValidPrivateKey } from '../services/crypto';
 
 interface WalletContextType {
@@ -20,10 +22,11 @@ interface WalletContextType {
   isAuthenticated: boolean;
   isLocked: boolean;
   
-  miningSession: MiningSession | null;
+  miningStatus: MiningStatus | null;
   miningRemainingMs: number;
   isMiningActive: boolean;
-  canClaimMining: boolean;
+  dailyLimitReached: boolean;
+  settings: AppSettings | null;
   
   tasks: TaskItem[];
   transactions: Transaction[];
@@ -32,16 +35,16 @@ interface WalletContextType {
   
   // Auth
   loginWithPrivateKey: (key: string) => Promise<boolean>;
-  generateNewAccount: () => { key: string; account: Promise<WalletAccount> };
+  generateNewAccount: () => { key: string };
   confirmAccountCreation: (key: string) => Promise<boolean>;
   logout: () => void;
   lockWallet: () => void;
   unlockWallet: (credential?: string) => boolean;
   
   // Actions
-  startMining: () => void;
-  claimMining: () => Promise<number>;
-  executeSwap: (cooptokenAmount: number) => Promise<{ coopReceived: number }>;
+  startMining: () => Promise<void>;
+  stopMining: () => Promise<number>;
+  executeSwap: (direction: SwapDirection, amount: number) => Promise<{ points: number; coop: number }>;
   executeSend: (recipient: string, amount: number) => Promise<{ fee: number }>;
   purchaseBoost: (tierId: string) => Promise<boolean>;
   claimTask: (taskId: string) => Promise<number>;
@@ -55,33 +58,16 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentScreen, setCurrentScreen] = useState<ScreenName>('welcome');
   const [screenHistory, setScreenHistory] = useState<ScreenName[]>(['welcome']);
-  
-  const [account, setAccount] = useState<WalletAccount | null>(() => {
-    const savedId = localStorage.getItem('coop_active_wallet_key');
-    if (savedId) {
-      const wallets = JSON.parse(localStorage.getItem('coop_wallets') || '{}');
-      return wallets[savedId] || null;
-    }
-    return null;
-  });
-
+  const [account, setAccount] = useState<WalletAccount | null>(null);
   const [isLocked, setIsLocked] = useState<boolean>(false);
-  const [miningSession, setMiningSession] = useState<MiningSession | null>(null);
+  const [miningStatus, setMiningStatus] = useState<MiningStatus | null>(null);
   const [miningRemainingMs, setMiningRemainingMs] = useState<number>(0);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [notifications, setNotifications] = useState<AppNotification[]>([
-    {
-      id: 'notif_welcome',
-      title: 'Welcome to COOP',
-      message: 'Your decentralized wallet & pre-TGE mining node is active.',
-      type: 'info',
-      timestamp: Date.now(),
-      read: false
-    }
-  ]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const pollRef = useRef<number | null>(null);
 
-  // Navigate helper
   const navigateTo = useCallback((screen: ScreenName) => {
     setScreenHistory(prev => [...prev, screen]);
     setCurrentScreen(screen);
@@ -91,24 +77,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setScreenHistory(prev => {
       if (prev.length <= 1) return prev;
       const updated = [...prev];
-      updated.pop(); // Remove current
+      updated.pop();
       const last = updated[updated.length - 1];
       setCurrentScreen(last);
       return updated;
     });
   }, []);
 
-  // Notifications
   const addNotification = useCallback((title: string, message: string, type: AppNotification['type'] = 'info') => {
     setNotifications(prev => [
-      {
-        id: 'notif_' + Date.now(),
-        title,
-        message,
-        type,
-        timestamp: Date.now(),
-        read: false
-      },
+      { id: 'notif_' + Date.now(), title, message, type, timestamp: Date.now(), read: false },
       ...prev
     ]);
   }, []);
@@ -117,83 +95,135 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   }, []);
 
-  // Sync data when account is loaded
-  const refreshAccountData = useCallback(async (acc: WalletAccount) => {
-    const session = await dbService.getMiningSession(acc.id);
-    setMiningSession(session);
-    setTasks(await dbService.getTasks(acc.id));
-    setTransactions(await dbService.getTransactions(acc.id));
+  // Server is the source of truth: mining state + balances always come from the DB
+  const refreshMiningStatus = useCallback(async (walletId: string) => {
+    try {
+      const status = await dbService.getMiningStatus(walletId);
+      setMiningStatus(status);
+      setAccount(prev => (prev && prev.id === status.wallet.id
+        ? { ...prev, coopBalance: status.wallet.coopBalance, cooptokenBalance: status.wallet.cooptokenBalance }
+        : prev));
+    } catch (e) {
+      console.warn('Mining status refresh failed:', e);
+    }
   }, []);
 
-  useEffect(() => {
-    if (account) {
-      localStorage.setItem('coop_active_wallet_key', account.privateKey.toLowerCase());
-      refreshAccountData(account);
-      if (currentScreen === 'welcome' || currentScreen === 'login' || currentScreen === 'signup') {
-        setCurrentScreen('home');
-        setScreenHistory(['home']);
-      }
-    } else {
-      localStorage.removeItem('coop_active_wallet_key');
+  const refreshAccountData = useCallback(async (acc: WalletAccount) => {
+    try {
+      setTransactions(await dbService.getTransactions(acc.id));
+      setTasks(await dbService.getTasks(acc.id));
+    } catch (e) {
+      console.warn('Account data refresh failed:', e);
     }
-  }, [account]);
+    await refreshMiningStatus(acc.id);
+  }, [refreshMiningStatus]);
 
-  // Mining Countdown timer
+﻿
+
+  // Restore session from the stored private key (balances come from the server,
+  // never from localStorage)
   useEffect(() => {
-    if (!miningSession) return;
-
-    const updateTimer = () => {
-      const now = Date.now();
-      const remaining = Math.max(0, miningSession.endTime - now);
-      setMiningRemainingMs(remaining);
-
-      if (remaining <= 0 && miningSession.status === 'mining') {
-        setMiningSession(prev => prev ? { ...prev, status: 'ready_to_claim' } : null);
+    if (!isSupabaseConfigured) return;
+    const storedKey = localStorage.getItem('coop_private_key');
+    if (!storedKey) return;
+    (async () => {
+      try {
+        const acc = await dbService.authenticate(storedKey, false);
+        setAccount(acc);
+        setIsLocked(false);
+        await refreshAccountData(acc);
+        setCurrentScreen(prev => (['welcome', 'login', 'signup'].includes(prev) ? 'home' : prev));
+        setScreenHistory(['home']);
+      } catch (e) {
+        console.warn('Session restore failed:', e);
+        localStorage.removeItem('coop_private_key');
       }
-    };
+    })();
+  }, []);
 
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [miningSession]);
+  // Load public settings once
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    dbService.getSettings().then(setSettings).catch(e => console.warn('Settings load failed:', e));
+  }, []);
+
+  // Poll the server for mining progress (survives refresh/reopen)
+  useEffect(() => {
+    if (!account) return;
+    const poll = () => refreshMiningStatus(account.id);
+    pollRef.current = window.setInterval(poll, 15000);
+    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [account, refreshMiningStatus]);
+
+  // Session countdown (display only — the server clock computes rewards)
+  useEffect(() => {
+    if (!miningStatus?.session || miningStatus.session.status !== 'mining') {
+      setMiningRemainingMs(0);
+      return;
+    }
+    const session = miningStatus.session;
+    const update = () => setMiningRemainingMs(Math.max(0, session.endTime - Date.now()));
+    update();
+    const iv = window.setInterval(update, 1000);
+    return () => window.clearInterval(iv);
+  }, [miningStatus?.session]);
+
+  const isMiningActive = Boolean(miningStatus?.session && miningStatus.session.status === 'mining' && miningRemainingMs > 0);
+  const dailyLimitReached = Boolean(
+    miningStatus && !miningStatus.session &&
+    miningStatus.hoursMinedToday >= miningStatus.dailyHours - 0.001
+  );
 
   // --- Auth Handlers ---
   const loginWithPrivateKey = async (key: string): Promise<boolean> => {
-    if (!isValidPrivateKey(key)) {
-      return false;
-    }
-    const acc = await dbService.authenticate(key, false);
-    if (acc) {
+    if (!isValidPrivateKey(key)) return false;
+    try {
+      const acc = await dbService.authenticate(key, false);
       setAccount(acc);
       setIsLocked(false);
+      localStorage.setItem('coop_private_key', key.toLowerCase());
       navigateTo('home');
-      addNotification('Welcome Back', 'Logged in successfully with private key.', 'success');
+      addNotification('Welcome Back', 'Logged in successfully with your private key.', 'success');
+      await refreshAccountData(acc);
       return true;
+    } catch (e: any) {
+      console.warn('Login failed:', e.message);
+      return false;
     }
-    return false;
   };
 
   const generateNewAccount = () => {
     const key = generateSecurePrivateKey();
-    const accountPromise = dbService.authenticate(key, true) as Promise<WalletAccount>;
-    return { key, account: accountPromise };
+    return { key };
   };
 
   const confirmAccountCreation = async (key: string): Promise<boolean> => {
-    const acc = await dbService.authenticate(key, true);
-    if (acc) {
+    try {
+      const acc = await dbService.authenticate(key, true);
       setAccount(acc);
       setIsLocked(false);
+      localStorage.setItem('coop_private_key', key.toLowerCase());
       navigateTo('home');
-      addNotification('Account Created', 'Your private key account is ready and protected.', 'success');
+      addNotification('Account Created', 'Your COOP Wallet account is ready. Start mining to earn Coopoints!', 'success');
+      await refreshAccountData(acc);
       return true;
+    } catch (e: any) {
+      console.error('Account creation failed:', e.message);
+      return false;
     }
-    return false;
   };
 
   const logout = () => {
     setAccount(null);
-    setMiningSession(null);
+    setMiningStatus(null);
+    setTasks([]);
+    setTransactions([]);
+    localStorage.removeItem('coop_private_key');
     setCurrentScreen('welcome');
     setScreenHistory(['welcome']);
   };
@@ -212,87 +242,83 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return false;
   };
 
-  // --- Mining Handlers ---
+
+  // --- Mining Handlers (server-side start/stop; reward computed on server) ---
   const startMining = async () => {
     if (!account) return;
-    const session = await dbService.startMiningSession(account.id);
-    setMiningSession(session);
-    addNotification('Mining Started', '12-hour session initiated. Come back to claim your Cooptoken.', 'mining');
-  };
-
-  const claimMining = async (): Promise<number> => {
-    if (!account || !miningSession) return 0;
     try {
-      const res = await dbService.claimMiningSession(account, miningSession);
-      setAccount({ ...res.wallet });
-      setMiningSession(res.session);
-      setTransactions(await dbService.getTransactions(res.wallet.id));
-      addNotification('Mining Claimed', `Successfully claimed +${res.reward} Cooptoken!`, 'success');
-      return res.reward;
+      const session = await dbService.startMining(account.id);
+      setMiningStatus(prev => prev ? { ...prev, session } : prev);
+      addNotification('Mining Started', `Mining at ${session.baseRate} Coopoints/hour (+${session.boostPct}% boost).`, 'mining');
     } catch (e: any) {
-      alert(e.message || 'Error claiming mining reward');
-      return 0;
+      addNotification('Mining Error', e.message || 'Could not start mining', 'info');
+      throw e;
     }
   };
 
-  // --- Swap Handlers ---
-  const executeSwap = async (cooptokenAmount: number): Promise<{ coopReceived: number }> => {
+  const stopMining = async (): Promise<number> => {
+    if (!account) return 0;
+    const res = await dbService.stopMining(account);
+    setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
+    await refreshMiningStatus(account.id);
+    setTransactions(await dbService.getTransactions(account.id));
+    addNotification('Mining Claimed', `+${res.reward} Coopoints credited to your balance.`, 'success');
+    return res.reward;
+  };
+
+  // --- Swap Handlers (validated & executed server-side) ---
+  const executeSwap = async (direction: SwapDirection, amount: number): Promise<{ points: number; coop: number }> => {
     if (!account) throw new Error('No active wallet');
-    const res = await dbService.executeSwap(account, cooptokenAmount);
-    setAccount({ ...res.wallet });
-    setTransactions(await dbService.getTransactions(res.wallet.id));
-    addNotification('Swap Completed', `Swapped ${cooptokenAmount} Cooptoken for +${res.coopReceived} COOP`, 'tx');
-    return { coopReceived: res.coopReceived };
+    const res = await dbService.executeSwap(account, direction, amount);
+    setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
+    setTransactions(await dbService.getTransactions(account.id));
+    if (direction === 'points_to_coop') {
+      addNotification('Swap Completed', `Converted ${res.points} Coopoints into ${res.coop} COOP.`, 'tx');
+    } else {
+      addNotification('Reverse Swap Completed', `Converted ${res.coop} COOP into ${res.points} Coopoints.`, 'tx');
+    }
+    return { points: res.points, coop: res.coop };
   };
 
   // --- Send Handlers ---
   const executeSend = async (recipient: string, amount: number): Promise<{ fee: number }> => {
     if (!account) throw new Error('No active wallet');
     const res = await dbService.executeSend(account, recipient, amount);
-    setAccount({ ...res.wallet });
-    setTransactions(await dbService.getTransactions(res.wallet.id));
+    setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
+    setTransactions(await dbService.getTransactions(account.id));
     addNotification('Transfer Sent', `Sent ${amount} COOP to ${recipient.slice(0, 8)}...`, 'tx');
     return { fee: res.fee };
   };
 
-  // --- Boost Handlers ---
-  const purchaseBoost = async (tierId: string): Promise<boolean> => {
-    if (!account) return false;
-    const tier = BOOST_TIERS.find(t => t.id === tierId);
-    if (!tier) return false;
-
-    try {
-      const updated = await dbService.purchaseBoost(account, tier);
-      setAccount({ ...updated });
-      await refreshAccountData(updated);
-      addNotification('Boost Activated', `Purchased ${tier.name}! Added +${tier.rewardBonus} Cooptoken mining reward.`, 'success');
-      return true;
-    } catch (e: any) {
-      alert(e.message || 'Boost purchase failed');
-      return false;
-    }
+  // --- Boosts (USDT purchase is NOT live — Coming Soon) ---
+  const purchaseBoost = async (_tierId: string): Promise<boolean> => {
+    throw new Error('COMING SOON');
   };
 
   // --- Task Handlers ---
   const claimTask = async (taskId: string): Promise<number> => {
     if (!account) return 0;
     const res = await dbService.claimTask(account, taskId);
-    setAccount({ ...res.wallet });
-    setTasks(res.tasks);
-    setTransactions(await dbService.getTransactions(res.wallet.id));
-    addNotification('Task Completed', `Earned +${res.reward} Cooptoken!`, 'success');
+    setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
+    setTasks(await dbService.getTasks(account.id));
+    setTransactions(await dbService.getTransactions(account.id));
+    addNotification('Task Completed', `Earned +${res.reward} Coopoints!`, 'success');
     return res.reward;
   };
 
+  // Local UI preferences only (PIN, biometrics, etc.) — balances are never
+  // written from the client; financial state lives on the server.
   const updateAccountSettings = (updates: Partial<WalletAccount>) => {
     if (!account) return;
-    const updated = { ...account, ...updates };
-    dbService.saveWallet(updated);
+    const allowed: Partial<WalletAccount> = {};
+    if (updates.pinCode !== undefined) allowed.pinCode = updates.pinCode;
+    if (updates.biometricsEnabled !== undefined) allowed.biometricsEnabled = updates.biometricsEnabled;
+    if (updates.notificationsEnabled !== undefined) allowed.notificationsEnabled = updates.notificationsEnabled;
+    if (updates.autoLockMinutes !== undefined) allowed.autoLockMinutes = updates.autoLockMinutes;
+    const updated = { ...account, ...allowed };
     setAccount(updated);
+    localStorage.setItem(`coop_prefs_${account.id}`, JSON.stringify(allowed));
   };
-
-  const isMiningActive = miningSession?.status === 'mining' && miningRemainingMs > 0;
-  const canClaimMining = miningSession?.status === 'ready_to_claim' || (Boolean(miningSession) && miningRemainingMs <= 0 && miningSession?.status !== 'claimed');
 
   return (
     <WalletContext.Provider
@@ -304,10 +330,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         account,
         isAuthenticated: Boolean(account),
         isLocked,
-        miningSession,
+        miningStatus,
         miningRemainingMs,
         isMiningActive,
-        canClaimMining,
+        dailyLimitReached,
+        settings,
         tasks,
         transactions,
         notifications,
@@ -319,7 +346,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         lockWallet,
         unlockWallet,
         startMining,
-        claimMining,
+        stopMining,
         executeSwap,
         executeSend,
         purchaseBoost,
@@ -341,3 +368,4 @@ export const useWallet = (): WalletContextType => {
   }
   return context;
 };
+

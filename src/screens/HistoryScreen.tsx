@@ -70,7 +70,9 @@ export const HistoryScreen: React.FC = () => {
           </div>
         ) : (
           filtered.map(tx => {
-            const isIncoming = tx.txType === 'receive' || tx.txType === 'mining' || tx.txType === 'task';
+            const isIncoming = tx.txType === 'receive' || tx.txType === 'mining' || tx.txType === 'task' || tx.txType === 'boost';
+            const isSwap = tx.txType === 'swap';
+            const pointsToCoop = tx.direction === 'points_to_coop';
             return (
               <div
                 key={tx.id}
@@ -93,7 +95,7 @@ export const HistoryScreen: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: isIncoming ? 'var(--accent-green)' : 'var(--text-primary)'
+                    color: isSwap || isIncoming ? 'var(--accent-green)' : 'var(--text-primary)'
                   }}>
                     {tx.txType === 'receive' && <ArrowDownLeft size={18} />}
                     {tx.txType === 'send' && <ArrowUpRight size={18} />}
@@ -105,22 +107,36 @@ export const HistoryScreen: React.FC = () => {
 
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, textTransform: 'capitalize' }}>
-                      {tx.txType}
+                      {isSwap ? (pointsToCoop ? 'Swap' : 'Reverse Swap') : tx.txType}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                       {formatDate(tx.timestamp)}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                      ID: {tx.txHash.slice(0, 14)}…
                     </div>
                   </div>
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: isIncoming ? 'var(--accent-green)' : 'var(--text-primary)'
-                  }}>
-                    {isIncoming ? '+' : '-'}{tx.amount.toFixed(2)} {tx.currency}
-                  </div>
+                  {isSwap && tx.pointsAmount != null ? (
+                    <>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        -{tx.pointsAmount.toLocaleString()} {pointsToCoop ? 'Coopoints' : 'COOP'}
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-green)' }}>
+                        +{pointsToCoop ? tx.amount.toLocaleString() : (tx.pointsAmount).toLocaleString()} {pointsToCoop ? 'COOP' : 'Coopoints'}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: isIncoming ? 'var(--accent-green)' : 'var(--text-primary)'
+                    }}>
+                      {isIncoming ? '+' : '-'}{tx.amount.toFixed(2)} {tx.currency}
+                    </div>
+                  )}
                   <div style={{
                     fontSize: 11,
                     color: tx.status === 'Complete' ? 'var(--accent-green)' : 'var(--text-tertiary)',

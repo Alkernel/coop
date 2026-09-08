@@ -6,11 +6,11 @@ import { useWallet } from '../context/WalletContext';
 import { NotificationDrawer } from '../components/NotificationDrawer';
 
 export const HomeScreen: React.FC = () => {
-  const { 
+  const {
     account, 
     navigateTo, 
     unreadNotificationsCount, 
-    miningSession, 
+    miningStatus,
     isMiningActive 
   } = useWallet();
 
@@ -22,12 +22,16 @@ export const HomeScreen: React.FC = () => {
   const totalUsd = (coopBalance * coopPrice).toFixed(2);
   const cooptokenBalance = account?.cooptokenBalance || 0;
 
-  // Real mining power (level-based, not a mock)
-  const miningPowerPct = Math.min(100, Math.round(((account?.miningPowerLevel || 1) - 1) * 15 + 15));
+  // Real values from the backend mining status
+  const boostPct = miningStatus?.boostPct ?? 0;
+  const effectiveRate = (miningStatus?.rate ?? 50) * (1 + boostPct / 100);
+  const hoursToday = miningStatus?.hoursMinedToday ?? 0;
+  const dailyHours = miningStatus?.dailyHours ?? 12;
+  const miningPowerPct = Math.min(100, Math.round((hoursToday / dailyHours) * 100));
 
-  // Today's mining reward calculation
-  const rewardTotal = miningSession?.totalReward || (50 + (account?.totalBoostReward || 0));
-  const rewardUsd = (rewardTotal * (coopPrice / 1000) * 200).toFixed(2); // estimated value projection
+  // Today's mining earnings (server-side value)
+  const rewardTotal = miningStatus?.pointsEarnedToday ?? 0;
+  const rewardUsd = (rewardTotal * (coopPrice / 10)).toFixed(2); // estimated projection
 
   return (
     <div className="screen-content" style={{ paddingBottom: 16 }}>
@@ -72,7 +76,7 @@ export const HomeScreen: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, color: 'var(--text-secondary)', fontWeight: 500 }}>
             <span>= {coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COOP</span>
             <span className="badge-tag badge-green">
-              ▲ +{account?.currentBoostPct || 15}%
+              ▲ +{boostPct}%
             </span>
           </div>
 
@@ -203,9 +207,9 @@ export const HomeScreen: React.FC = () => {
         style={{ cursor: 'pointer' }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: 14, fontWeight: 700 }}>Mining Power</span>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>Mining Today</span>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
-            Level {account?.miningPowerLevel || 1}
+            {effectiveRate.toFixed(1)} pts/hr
           </span>
         </div>
 
@@ -244,10 +248,10 @@ export const HomeScreen: React.FC = () => {
           </div>
           <div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 2 }}>
-              Today's Reward
+              Today's Earnings
             </div>
             <div style={{ fontSize: 17, fontWeight: 800 }}>
-              +{rewardTotal.toFixed(2)} Cooptoken
+              +{rewardTotal.toFixed(2)} Coopoints
             </div>
           </div>
         </div>
