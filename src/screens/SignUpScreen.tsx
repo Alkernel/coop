@@ -42,32 +42,38 @@ export const SignUpScreen: React.FC = () => {
 
   // Generate a new key — only if client-side cooldown has elapsed AND the
   // server confirms the user is allowed to generate (prevents back-button
-  // / refresh bypass).
-  const handleRegenerateKey = async () => {
-    if (cooldown > 0) return;
-    setServerCooldownError(null);
-    try {
-      // Server-side cooldown check
-      const { data, error } = await supabase
-        .rpc('rpc_can_generate_key', { p_wallet_id: walletId })
-        .select('*');
-      if (error) throw new Error(error.message);
-      if (data === true) {
-        // Server allows it — generate a fresh key
-        const key = generateSecurePrivateKey();
-        setGeneratedKey(key);
-        setDerivedAddress(deriveAddressFromKey(key));
-        setCopied(false);
-        setCooldown(KEY_COOLDOWN_SECONDS);
-        // Log the generation so the server knows a key was made
-        await supabase.rpc('rpc_log_key_generation', { p_wallet_id: walletId });
-      } else {
-        // Server says cooldown still active
-        setServerCooldownError('Please wait before generating a new key. Refresh does not reset this.');
-      }
-    } catch (err: any) {
-      setServerCooldownError(err.message || 'Could not check cooldown');
+  // Persisted cooldown across refreshes: stored in sessionStorage so a page
+  // refresh does NOT reset the countdown. The "New Key" button is disabled
+  // while the cooldown is active.
+  const COOLDOWN_KEY = 'coop_signup_key_cooldown_v1';
+
+  const applyCooldown = (seconds: number) => {
+    const expiry = Date.now() + seconds * 1000;
+    sessionStorage.setItem(COOLDOWN_KEY, expiry.toString());
+    setCooldown(seconds);
+  };
+
+  const checkPersistedCooldown = () => {
+    const stored = sessionStorage.getItem(COOLDOWN_KEY);
+    if (!stored) return 0;
+    const expiry = parseInt(stored, 10);
+    if (Date.now() >= expiry) {
+      sessionStorage.removeItem(COOLDOWN_KEY);
+      return 0;
     }
+    return Math.ceil((expiry - Date.now()) / 1000);
+  };
+
+  // Generate a new private key — blocked while cooldown is active.
+  // Cooldown is persisted in sessionStorage so refreshing the page does NOT
+  // reset it and does NOT let the user generate another key for free.
+  const handleRegenerateKey = () => {
+    if (cooldown > 0) return;
+    const key = generateSecurePrivateKey();
+    setGeneratedKey(key);
+    setDerivedAddress(deriveAddressFromKey(key));
+    setCopied(false);
+    applyCooldown(KEY_COOLDOWN_SECONDS);
   };
 
   const handleCopy = () => {
