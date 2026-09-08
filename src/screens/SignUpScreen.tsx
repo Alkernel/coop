@@ -10,18 +10,37 @@ export const SignUpScreen: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [confirmedSaved, setConfirmedSaved] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
-  // Generate a real, unique random private key
+  // Cooldown before a new key can be generated again (prevents key spamming)
+  const KEY_COOLDOWN_SECONDS = 60;
+
+  // Generate a real, unique random private key (blocked during cooldown)
   const handleRegenerateKey = () => {
+    if (cooldown > 0) return;
     const key = generateSecurePrivateKey();
     setGeneratedKey(key);
     setDerivedAddress(deriveAddressFromKey(key));
     setCopied(false);
+    setCooldown(KEY_COOLDOWN_SECONDS);
   };
 
+  // First key on load, then lock regeneration behind the cooldown
   useEffect(() => {
-    handleRegenerateKey();
+    const key = generateSecurePrivateKey();
+    setGeneratedKey(key);
+    setDerivedAddress(deriveAddressFromKey(key));
+    setCooldown(KEY_COOLDOWN_SECONDS);
   }, []);
+
+  // Countdown ticker that runs only while the cooldown is active
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const interval = setInterval(() => {
+      setCooldown(prev => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldown > 0]);
 
   const handleCopy = () => {
     if (!generatedKey) return;
@@ -108,6 +127,7 @@ Store this file offline on a secure drive.
               <button
                 type="button"
                 onClick={handleRegenerateKey}
+                disabled={cooldown > 0}
                 style={{
                   background: 'var(--bg-glass)',
                   border: '1px solid var(--border-color)',
@@ -116,16 +136,17 @@ Store this file offline on a secure drive.
                   borderRadius: 8,
                   fontSize: 11,
                   fontWeight: 600,
-                  cursor: 'pointer',
+                  cursor: cooldown > 0 ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 4
+                  gap: 4,
+                  opacity: cooldown > 0 ? 0.55 : 1
                 }}
-                title="Generate another key"
+                title={cooldown > 0 ? `Wait ${cooldown}s to generate a new key` : 'Generate another key'}
                 id="btn-regenerate-key"
               >
                 <RefreshCw size={11} />
-                New Key
+                {cooldown > 0 ? `${cooldown}s` : 'New Key'}
               </button>
 
               <button
@@ -209,6 +230,34 @@ Store this file offline on a secure drive.
             </button>
           </div>
         </div>
+
+        {/* Cooldown hint */}
+        {cooldown > 0 ? (
+          <p style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12,
+            color: 'var(--text-tertiary)',
+            marginBottom: 16,
+            lineHeight: 1.4
+          }}>
+            <RefreshCw size={12} style={{ flexShrink: 0 }} />
+            <span>You can generate another key in <strong>{cooldown}s</strong>. Please save this one first.</span>
+          </p>
+        ) : (
+          <p style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12,
+            color: 'var(--accent-green)',
+            marginBottom: 16
+          }}>
+            <Check size={12} style={{ flexShrink: 0 }} />
+            <span>Ready — a new key can now be generated.</span>
+          </p>
+        )}
 
         {/* Warning Alert without raw stars */}
         <div style={{

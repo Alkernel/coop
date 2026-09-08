@@ -19,49 +19,15 @@ export const CoopLogo: React.FC<CoopLogoProps> = ({
       style={{ width: size, height: size }}
     >
       <svg
-        viewBox="0 0 100 100"
+        viewBox="0 0 1254 1254"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        style={{ width: '100%', height: '100%', display: 'block' }}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ width: '100%', height: '100%', display: 'block', color: 'currentColor' }}
       >
-        <defs>
-          <linearGradient id="coopGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="var(--logo-gradient-start, #ffffff)" />
-            <stop offset="100%" stopColor="var(--logo-gradient-end, #a1a1aa)" />
-          </linearGradient>
-          <filter id="coopShadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="rgba(255,255,255,0.2)" />
-          </filter>
-        </defs>
-
-        {/* Outer Circular Track with Accent Gap */}
-        <circle
-          cx="50"
-          cy="50"
-          r="42"
-          stroke="currentColor"
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeDasharray="210 55"
-          transform="rotate(-40 50 50)"
-        />
-
-        {/* Central Bold Token Symbol */}
-        <path
-          d="M62 38C58.5 33.5 53 31 46.5 31C35.5 31 27 39.5 27 50C27 60.5 35.5 69 46.5 69C53 69 58.5 66.5 62 62"
-          stroke="currentColor"
-          strokeWidth="9"
-          strokeLinecap="round"
-        />
-
-        {/* Mining / Crypto Node Connectors */}
-        <circle cx="50" cy="18" r="4.5" fill="currentColor" />
-        <circle cx="50" cy="82" r="4.5" fill="currentColor" />
-        <line x1="50" y1="18" x2="50" y2="30" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-        <line x1="50" y1="70" x2="50" y2="82" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-
-        {/* Center Core Dot */}
-        <circle cx="50" cy="50" r="5" fill="currentColor" />
+        <g transform="translate(0.000000,1254.000000) scale(0.100000,-0.100000)" fill="currentColor" stroke="none">
+          <path d="m6000 4105 c16 -8 34 -24 40 -34 6 -13 10 -155 10 -390 l0 -371 218 0 217 0 0 368 c0 338 1 370 18 395 10 16 29 32 43 37 14 6 155 10 316 10 l290 0 34 -34 34 -34 0 -440 0 -440 68 -22 c526 -173 1066 -547 1418 -984 89 -110 241 -340 306 -461 58 -110 138 -278 138 -292 0 -5 -114 -61 -252 -125 -139 -64 -305 -141 -369 -171 l-116 -55 -194 272 c-107 149 -228 314 -270 366 -187 233 -426 419 -724 561 -539 257 -1179 287 -1755 82 -772 -276 -1344 -948 -1504 -1771 -195 -999 274 -1946 1194 -2411 317 -161 621 -237 990 -248 547 -17 1071 164 1520 523 190 153 377 363 626 705 l115 158 370 -184 369 -185 -41 -83 c-375 -748 -1033 -1317 -1821 -1576 l-68 -23 0 -499 c0 -349 -3 -507 -11 -522 -29 -57 -29 -57 -354 -57 -262 0 -304 2 -324 16 -49 35 -51 52 -51 507 l0 424 -215 0 -215 0 0 -444 0 -445 -29 -29 -29 -29 -304 0 c-328 0 -328 0 -357 57 -8 15 -11 172 -11 516 l0 494 -142 47 c-1160 385 -1975 1426 -2069 2646 -47 613 109 1276 431 1830 384 661 974 1140 1720 1396 l55 19 5 443 5 444 33 29 32 29 291 0 c239 0 295 -3 319 -15z"/>
+        </g>
       </svg>
     </div>
   );
