@@ -101,7 +101,16 @@
       <div id="save-msg" class="msg"></div>
     </div>
   </div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    // Guard: if the CDN library failed to load, show a clear error instead of dead buttons
+    if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+      document.addEventListener('DOMContentLoaded', function () {
+        var m = document.getElementById('login-msg');
+        if (m) { m.className = 'msg msg-error'; m.textContent = 'Failed to load Supabase library — check your internet connection and reload.'; m.style.display = 'flex'; }
+      });
+    }
+    const SUPABASE_URL="https://xkmnodecehgpnssdctvk.supabase.co";
   <script>
     const SUPABASE_URL="https://xkmnodecehgpnssdctvk.supabase.co";
     const SUPABASE_ANON_KEY="sb_publishable__Ddgj3Yzj7CHXWeBZFQ36g_XOW2sIAL";
