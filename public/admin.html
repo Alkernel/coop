@@ -41,23 +41,30 @@
 </head>
 <body>
   <div class="container">
-    <div class="header"><div><h1>COOP Admin</h1><p>System configuration</p></div></div>
-<!-- UNLOCK -->
+    <div class="header" style="justify-content:space-between"><div><h1>COOP Admin</h1><p>System configuration</p></div><button class="btn btn-secondary" id="signout-btn" onclick="signOut()" style="display:none">Sign Out</button></div>
+<!-- UNLOCK (Email + Password via Supabase Auth) -->
     <div id="login-section" class="card">
-      <div class="card-title">Admin Authentication</div>
-      <div class="field"><label>Admin Key</label><input type="password" id="admin-key" placeholder="Enter admin key..."/></div>
-      <button class="btn" onclick="authenticate()" id="unlock-btn">Unlock</button>
-      <div class="hint" style="margin-top:10px">Don't know your key? Reset it from the Supabase SQL editor, then use that value here. Instructions below.</div>
+      <div class="card-title">Admin Sign In</div>
+      <div class="field"><label>Email</label><input type="email" id="admin-email" placeholder="admin@gmail.com" autocomplete="username"/></div>
+      <div class="field"><label>Password</label><input type="password" id="admin-password" placeholder="Your Supabase Auth password" autocomplete="current-password"/></div>
+      <button class="btn" onclick="signIn()" id="signin-btn">Sign In</button>
       <div id="login-msg" class="msg"></div>
       <details style="margin-top:12px">
-        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary)">First time / lost key — how to set one</summary>
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary)">First time setup — grant admin access to your email</summary>
         <div class="hint" style="margin-top:8px">
           1. Open your Supabase project → <b>SQL Editor</b>.<br/>
-          2. Paste and run (replace the password inside the quotes):<br/>
-          <code>insert into admin_settings (id, admin_key_hash, updated_at) values ('default', encode(digest('CoopAdmin123!','sha256'),'hex'), now()) on conflict (id) do update set admin_key_hash = excluded.admin_key_hash, updated_at = excluded.updated_at;</code><br/>
-          3. Back here, type <code>CoopAdmin123!</code> in the field above and click <b>Unlock</b>.<br/>
-          <span style="color:var(--accent-red)">Keep this key secret. It grants full control of wallet settings.</span>
+          2. Paste and run (replace with YOUR email — the one you registered in Supabase Auth):<br/>
+          <code>insert into public.admin_users (user_id, email) select id, email from auth.users where email = 'you@gmail.com' on conflict (user_id) do nothing;</code><br/>
+          3. Come back here and sign in with that email + password.<br/>
+          <span style="color:var(--accent-red)">Only emails inserted into admin_users get admin access.</span><br/><br/>
+          <b>If sign-in says a function is missing</b>, reload the API cache: Supabase Dashboard → Settings → API → <b>Reload schema cache</b> (or Restart project).
         </div>
+      </details>
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary)">Sign in with admin key instead</summary>
+        <div class="field" style="margin-top:10px"><label>Admin Key</label><input type="password" id="admin-key" placeholder="Fallback admin key..."/></div>
+        <button class="btn btn-secondary" onclick="signInWithKey()" id="key-btn">Unlock with Key</button>
+        <div class="hint" style="margin-top:8px">The key must already be stored in the database (set once via SQL). Email login is recommended.</div>
       </details>
     </div>
 
@@ -98,32 +105,78 @@
   <script>
     const SUPABASE_URL="https://xkmnodecehgpnssdctvk.supabase.co";
     const SUPABASE_ANON_KEY="sb_publishable__Ddgj3Yzj7CHXWeBZFQ36g_XOW2sIAL";
-    let supabase=null,adminKey="";
+    let supabase=null,usingKey=false;
     function $(t){return document.getElementById(t)}
     function toggle(t){$(t).classList.toggle("active")}
     function isActive(t){return $(t).classList.contains("active")}
     function setToggle(t,e){e?$(t).classList.add("active"):$(t).classList.remove("active")}
     function showMsg(t,e,s){const o=$(t);o.className="msg "+(s?"msg-error":"msg-success");o.textContent=e;o.style.display="flex"}
     function hideMsg(t){$(t).style.display="none"}
-    async function authenticate(){
+    function getClient(){
+      if(!supabase)supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+      return supabase;
+    }
+    async function openPanel(){
+      const{data:e,error:s}=await supabase.rpc("rpc_get_settings");
+      if(s)throw s;
+      $("login-section").style.display="none";
+      $("settings-section").style.display="block";
+      $("signout-btn").style.display="inline-flex";
+      populateForm(e);hideMsg("login-msg");
+    }
+    async function signIn(){
+      const email=$("admin-email").value.trim(),password=$("admin-password").value;
+      if(!email||!password)return void showMsg("login-msg","Enter your email and password",!0);
+      hideMsg("login-msg");
+      const btn=$("signin-btn");btn.disabled=!0;btn.textContent="Signing in...";
+      try{
+        getClient();
+        const{data,error}=await supabase.auth.signInWithPassword({email,password});
+        if(error)throw error;
+        const{data:isAdmin,error:aErr}=await supabase.rpc("rpc_is_admin");
+        if(aErr)throw aErr;
+        if(!isAdmin){
+          await supabase.auth.signOut();
+          throw new Error("This account is not an admin. Run the setup SQL below to add your email to admin_users, then try again.");
+        }
+        usingKey=false;
+        await openPanel();
+        showMsg("save-msg","Signed in as "+email,!1);
+      }catch(err){
+        showMsg("login-msg","Sign-in failed: "+(err.message||"invalid credentials"),!0);
+      }finally{btn.disabled=!1;btn.textContent="Sign In"}
+    }
+    async function signInWithKey(){
       const key=$("admin-key").value.trim();
       if(!key)return void showMsg("login-msg","Admin key is required",!0);
       hideMsg("login-msg");
-      const btn=$("unlock-btn");btn.disabled=!0;btn.textContent="Checking...";
+      const btn=$("key-btn");btn.disabled=!0;btn.textContent="Checking...";
       try{
-        if(!supabase)supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+        getClient();
         const{data:valid,error:vErr}=await supabase.rpc("rpc_verify_admin_key",{p_admin_key:key});
         if(vErr)throw vErr;
-        if(!valid)return void showMsg("login-msg","Invalid admin key. If you lost it, reset it via SQL (see instructions).",!0);
-        adminKey=key;
-        const{data:e,error:s}=await supabase.rpc("rpc_get_settings");
-        if(s)throw s;
-        $("login-section").style.display="none";
-        $("settings-section").style.display="block";
-        populateForm(e);hideMsg("login-msg");
+        if(!valid)return void showMsg("login-msg","Invalid admin key.",!0);
+        usingKey=true;
+        await openPanel();
       }catch(err){
         showMsg("login-msg","Authentication failed: "+(err.message||"Invalid key"),!0);
-      }finally{btn.disabled=!1;btn.textContent="Unlock"}
+      }finally{btn.disabled=!1;btn.textContent="Unlock with Key"}
+    }
+    async function signOut(){
+      try{if(supabase)await supabase.auth.signOut()}catch(e){}
+      usingKey=false;
+      $("settings-section").style.display="none";
+      $("login-section").style.display="block";
+      $("signout-btn").style.display="none";
+    }
+    async function restoreSession(){
+      try{
+        getClient();
+        const{data:{session}}=await supabase.auth.getSession();
+        if(!session)return;
+        const{data:isAdmin}=await supabase.rpc("rpc_is_admin");
+        if(isAdmin){await openPanel();showMsg("save-msg","Signed in as "+(session.user.email||"admin"),!1)}
+      }catch(e){}
     }
     function populateForm(t){
       $("base-mining-rate").value=t.base_mining_rate;$("daily-mining-hours").value=t.daily_mining_hours;
@@ -140,19 +193,22 @@
     }
     async function saveSettings(){
       hideMsg("save-msg");
-      if(!adminKey)return void showMsg("save-msg","Session expired. Reload and unlock again.",!0);
+      if(usingKey&&!$("admin-key").value.trim())return void showMsg("save-msg","Session expired. Reload and unlock again.",!0);
       let e;
       try{if(e=JSON.parse($("boost-tiers").value),!Array.isArray(e))throw new Error("Must be a JSON array")}
       catch(t){return void showMsg("save-msg","Invalid boost tiers JSON: "+t.message,!0)}
       const s={base_mining_rate:parseFloat($("base-mining-rate").value),daily_mining_hours:parseFloat($("daily-mining-hours").value),points_per_coop:parseFloat($("points-per-coop").value),daily_conversion_limit_points:parseFloat($("daily-conversion-limit").value),total_coop_reward_pool:parseFloat($("total-pool").value),remaining_coop_reward_pool:parseFloat($("remaining-pool").value),mining_enabled:isActive("mining-enabled"),conversion_enabled:isActive("conversion-enabled"),boost_purchases_enabled:isActive("boost-purchases-enabled"),boosts_stackable:isActive("boosts-stackable"),swap_rate_limit_seconds:parseInt($("swap-rate-limit").value),boost_tiers:e};
       const btn=$("save-btn");btn.disabled=!0;btn.textContent="Saving...";
       try{
-        const{error:er}=await supabase.rpc("rpc_admin_set_settings",{p_admin_key:adminKey,p_updates:JSON.stringify(s)});
+        const{error:er}=await supabase.rpc("rpc_admin_set_settings",{p_admin_key:usingKey?$("admin-key").value.trim():null,p_updates:JSON.stringify(s)});
         if(er)throw er;showMsg("save-msg","Settings saved successfully!",!1);
       }catch(t){showMsg("save-msg","Save failed: "+t.message,!0)}
       finally{btn.disabled=!1;btn.textContent="Save Settings"}
     }
-    $("admin-key").addEventListener("keypress",(t)=>{"Enter"===t.key&&authenticate()});
+    $("admin-key").addEventListener("keypress",(t)=>{"Enter"===t.key&&signInWithKey()});
+    $("admin-email").addEventListener("keypress",(t)=>{"Enter"===t.key&&signIn()});
+    $("admin-password").addEventListener("keypress",(t)=>{"Enter"===t.key&&signIn()});
+    restoreSession();
   </script>
 </body>
 </html>
