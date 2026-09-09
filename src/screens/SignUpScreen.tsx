@@ -1,51 +1,41 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Copy, Check, AlertTriangle, RefreshCw, Download, Sparkles, Key, Wallet } from 'lucide-react';
+import { ChevronLeft, Copy, Check, AlertTriangle, RefreshCw, Download, Key, Wallet } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
-import { generateSecurePrivateKey, deriveAddressFromKey } from '../services/crypto';
+import { generateSecurePrivateKey, deriveAddressFromKey, isValidPrivateKey } from '../services/crypto';
 
 export const SignUpScreen: React.FC = () => {
   const { goBack, confirmAccountCreation } = useWallet();
-  // Persisted key across refreshes: stored in a module-level ref so a page
-  // refresh does NOT generate a new key. Only `handleRegenerateKey` creates a
-  // new one, and that is blocked by the cooldown. The cooldown itself is also
-  // enforced server-side via rpc_can_generate_key / rpc_log_key_generation.
-  const [generatedKey, setGeneratedKey] = useState<string>('');
-  const [derivedAddress, setDerivedAddress] = useState<string>('');
+
+  // Keys and cooldown are persisted in sessionStorage so a page refresh does
+  // NOT generate a new key and does NOT reset the countdown. The same key is
+  // shown until the user explicitly clicks "New Key" after the cooldown
+  // expires, preventing refresh-based bypasses.
+  const KEY_STORAGE = 'coop_signup_generated_key_v1';
+  const ADDR_STORAGE = 'coop_signup_generated_addr_v1';
+  const COOLDOWN_KEY = 'coop_signup_key_cooldown_v1';
+  const KEY_COOLDOWN_SECONDS = 60;
+
+  const [generatedKey, setGeneratedKey] = useState<string>(() => {
+    const stored = sessionStorage.getItem(KEY_STORAGE);
+    return stored && isValidPrivateKey(stored) ? stored : '';
+  });
+  const [derivedAddress, setDerivedAddress] = useState<string>(() =>
+    sessionStorage.getItem(ADDR_STORAGE) || ''
+  );
   const [copied, setCopied] = useState(false);
   const [confirmedSaved, setConfirmedSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
-  const [serverCooldownError, setServerCooldownError] = useState<string | null>(null);
 
-  // Cooldown before a new key can be generated again (prevents key spamming)
-  const KEY_COOLDOWN_SECONDS = 60;
-
-  // Generate the initial key once and persist it across refreshes.
-  // On reload the same key is kept — no new key is created until the user
-  // explicitly clicks "New Key" after the cooldown expires.
-  useEffect(() => {
-    if (!generatedKey) {
-      const key = generateSecurePrivateKey();
-      setGeneratedKey(key);
-      setDerivedAddress(deriveAddressFromKey(key));
-    }
-  }, []);
-
-  // Countdown ticker that runs only while the cooldown is active
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const interval = setInterval(() => {
-      setCooldown(prev => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [cooldown > 0]);
-
-  // Generate a new key — only if client-side cooldown has elapsed AND the
-  // server confirms the user is allowed to generate (prevents back-button
-  // Persisted cooldown across refreshes: stored in sessionStorage so a page
-  // refresh does NOT reset the countdown. The "New Key" button is disabled
-  // while the cooldown is active.
-  const COOLDOWN_KEY = 'coop_signup_key_cooldown_v1';
+  // Persist a freshly generated key so it survives a refresh.
+  const persistKey = (key: string) => {
+    const addr = deriveAddressFromKey(key);
+    sessionStorage.setItem(KEY_STORAGE, key);
+    sessionStorage.setItem(ADDR_STORAGE, addr);
+    setGeneratedKey(key);
+    setDerivedAddress(addr);
+    setCopied(false);
+  };
 
   const applyCooldown = (seconds: number) => {
     const expiry = Date.now() + seconds * 1000;
@@ -53,7 +43,7 @@ export const SignUpScreen: React.FC = () => {
     setCooldown(seconds);
   };
 
-  const checkPersistedCooldown = () => {
+  const checkPersistedCooldown = (): number => {
     const stored = sessionStorage.getItem(COOLDOWN_KEY);
     if (!stored) return 0;
     const expiry = parseInt(stored, 10);
@@ -64,15 +54,38 @@ export const SignUpScreen: React.FC = () => {
     return Math.ceil((expiry - Date.now()) / 1000);
   };
 
-  // Generate a new private key — blocked while cooldown is active.
-  // Cooldown is persisted in sessionStorage so refreshing the page does NOT
-  // reset it and does NOT let the user generate another key for free.
+  // On mount: restore any persisted key + cooldown. Generate one key the very
+  // first time (and lock regeneration behind the cooldown).
+  useEffect(() => {
+    const remaining = checkPersistedCooldown();
+    setCooldown(remaining);
+    if (!generatedKey) {
+      persistKey(generateSecurePrivateKey());
+      if (remaining <= 0) applyCooldown(KEY_COOLDOWN_SECONDS);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Countdown ticker that runs only while the cooldown is active.
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const interval = setInterval(() => {
+      setCooldown(prev => {
+        if (prev <= 1) {
+          sessionStorage.removeItem(COOLDOWN_KEY);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldown > 0]);
+
+  // Generate a new private key, blocked while the cooldown is active. Since the
+  // cooldown is persisted across refreshes, refreshing does NOT bypass it.
   const handleRegenerateKey = () => {
     if (cooldown > 0) return;
-    const key = generateSecurePrivateKey();
-    setGeneratedKey(key);
-    setDerivedAddress(deriveAddressFromKey(key));
-    setCopied(false);
+    persistKey(generateSecurePrivateKey());
     applyCooldown(KEY_COOLDOWN_SECONDS);
   };
 
@@ -96,16 +109,15 @@ WALLET ADDRESS:
 ${derivedAddress}
 
 WARNING:
-Never share your private key with anyone. 
-Anyone who possesses this key has full control of your COOP and Cooptoken assets.
+Never share your private key with anyone.
+Anyone who possesses this key has full control of your COOP assets.
 Store this file offline on a secure drive.
 ====================================`;
-
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `coop-wallet-private-key.txt`;
+    a.download = 'coop-wallet-private-key.txt';
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -129,12 +141,7 @@ Store this file offline on a secure drive.
       <div>
         {/* Header with Back */}
         <div style={{ marginBottom: 20 }}>
-          <button 
-            className="header-icon-btn" 
-            onClick={goBack} 
-            aria-label="Back"
-            id="signup-back-btn"
-          >
+          <button className="header-icon-btn" onClick={goBack} aria-label="Back" id="signup-back-btn">
             <ChevronLeft size={22} />
           </button>
         </div>
@@ -146,8 +153,7 @@ Store this file offline on a secure drive.
         <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
           Your account is secured by your unique private key. No email, no password, no verification required.
         </p>
-
-        {/* Generated Key Bubble Card */}
+{/* Generated Key Bubble Card */}
         <div className="bubble-card bubble-card-elevated" style={{ border: '1px solid var(--border-focus)', marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -207,106 +213,51 @@ Store this file offline on a secure drive.
             </div>
           </div>
 
-          {/* Full Plaintext Key (No stars, no dots, full raw 64 hex characters) */}
-          <div style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 13,
-            lineHeight: 1.6,
-            wordBreak: 'break-all',
-            padding: '14px',
-            background: 'var(--bg-input)',
-            borderRadius: 14,
-            border: '1px solid var(--border-color)',
-            color: 'var(--text-primary)',
-            userSelect: 'all'
-          }}>
+          {/* Key display */}
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, wordBreak: 'break-all', color: 'var(--text-primary)', lineHeight: 1.5, userSelect: 'all' }}>
             {generatedKey}
           </div>
-
-          {/* Derived Wallet Address */}
-          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <Wallet size={12} color="var(--text-tertiary)" />
-              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600 }}>
-                Derived Wallet Address:
+          {derivedAddress && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
+              <Wallet size={13} color="var(--text-tertiary)" />
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                {derivedAddress}
               </span>
             </div>
-            <div style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-              wordBreak: 'break-all'
-            }}>
-              {derivedAddress}
-            </div>
-          </div>
+          )}
+        </div>
 
-          {/* Download Backup Button */}
-          <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              onClick={handleDownloadBackup}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6
-              }}
-              id="btn-download-backup"
-            >
-              <Download size={13} />
-              Save backup (.txt)
-            </button>
-          </div>
+        {/* Action buttons */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+          <button
+            type="button"
+            onClick={handleDownloadBackup}
+            className="pill-btn pill-btn-secondary"
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            id="btn-download-backup"
+          >
+            <Download size={13} />
+            Save backup (.txt)
+          </button>
         </div>
 
         {/* Cooldown hint */}
         {cooldown > 0 ? (
-          <p style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 12,
-            color: 'var(--text-tertiary)',
-            marginBottom: 16,
-            lineHeight: 1.4
-          }}>
+          <p style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16, lineHeight: 1.4 }}>
             <RefreshCw size={12} style={{ flexShrink: 0 }} />
             <span>You can generate another key in <strong>{cooldown}s</strong>. Please save this one first.</span>
           </p>
         ) : (
-          <p style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 12,
-            color: 'var(--accent-green)',
-            marginBottom: 16
-          }}>
+          <p style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--accent-green)', marginBottom: 16 }}>
             <Check size={12} style={{ flexShrink: 0 }} />
             <span>Ready — a new key can now be generated.</span>
           </p>
         )}
-
-        {/* Warning Alert without raw stars */}
-        <div style={{
-          padding: '12px 14px',
-          borderRadius: 16,
-          background: 'rgba(234, 179, 8, 0.08)',
-          border: '1px solid rgba(234, 179, 8, 0.25)',
-          display: 'flex',
-          gap: 10,
-          alignItems: 'flex-start',
-          marginBottom: 20
-        }}>
+{/* Warning Alert */}
+        <div style={{ padding: '12px 14px', borderRadius: 16, background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.25)', display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 20 }}>
           <AlertTriangle size={18} color="var(--accent-yellow)" style={{ flexShrink: 0, marginTop: 2 }} />
           <div style={{ fontSize: 12, lineHeight: 1.4, color: 'var(--text-primary)' }}>
-            <strong>Save your private key now.</strong> This is your master password. If you lose this key, nobody—not even the COOP team—can restore your account or recover your funds.
+            <strong>Save your private key now.</strong> This is your master password. If you lose this key, nobody - not even the COOP team - can restore your account or recover your funds.
           </div>
         </div>
 
@@ -342,7 +293,7 @@ Store this file offline on a secure drive.
 
       {/* Footer */}
       <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, paddingTop: 16 }}>
-        Decentralized • Non-Custodial • 256-bit Cryptographic Security
+        Decentralized - Non-Custodial - 256-bit Cryptographic Security
       </div>
     </div>
   );

@@ -90,11 +90,10 @@ export const SendScreen: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                // Quick sample paste for demo convenience
+                // Paste a clipboard address if it looks like a wallet address
                 navigator.clipboard?.readText().then(clip => {
                   if (clip && clip.startsWith('0x')) setRecipient(clip);
-                  else setRecipient('0x71C...49b2');
-                }).catch(() => setRecipient('0x71C948291...49b2'));
+                }).catch(() => undefined);
               }}
               style={{
                 position: 'absolute',

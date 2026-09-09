@@ -1,4 +1,4 @@
-﻿-- ==========================================================
+-- ==========================================================
 -- COOP WALLET — SUPABASE DATABASE SCHEMA & RPC FUNCTIONS (v2)
 -- Real server-side mining, bidirectional swap with controlled
 -- COOP reward pool, admin settings, locked-down RLS.
@@ -229,6 +229,7 @@ alter table public.tasks enable row level security;
 alter table public.user_tasks enable row level security;
 alter table public.transactions enable row level security;
 alter table public.swap_requests enable row level security;
+alter table public.key_generation_log enable row level security;
 
 drop policy if exists "Allow all on wallets for demo" on public.wallets;
 drop policy if exists "Allow all on mining_sessions" on public.mining_sessions;

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -9,7 +9,13 @@ import {
   Moon, 
   Sun, 
   Info, 
-  LogOut 
+  LogOut,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
+  AlertTriangle
 } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
 import { useTheme } from '../context/ThemeContext';
@@ -18,6 +24,16 @@ import { formatAddress } from '../services/crypto';
 export const SettingsScreen: React.FC = () => {
   const { goBack, navigateTo, account, logout, updateAccountSettings } = useWallet();
   const { theme, toggleTheme } = useTheme();
+
+  const [revealKey, setRevealKey] = useState(false);
+  const [keyCopied, setKeyCopied] = useState(false);
+
+  const handleCopyKey = () => {
+    if (!account?.privateKey) return;
+    navigator.clipboard.writeText(account.privateKey);
+    setKeyCopied(true);
+    setTimeout(() => setKeyCopied(false), 2500);
+  };
 
   const handleToggleNotifications = () => {
     if (account) {
@@ -51,11 +67,87 @@ export const SettingsScreen: React.FC = () => {
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>Account</div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                  Private Key {account?.address ? formatAddress(account.address, 6, 4) : '0x7a3f...9c2e'}
+                  {account?.address ? formatAddress(account.address, 6, 4) : ''}
                 </div>
               </div>
             </div>
             <ChevronRight size={18} color="var(--text-tertiary)" />
+          </div>
+
+          {/* Private Key Reveal */}
+          <div
+            className="bubble-card"
+            style={{ padding: '14px 18px', marginBottom: 0, display: 'flex', flexDirection: 'column' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <KeyRound size={20} color="var(--text-primary)" />
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>Private Key</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    Your master secret — never share it
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRevealKey(!revealKey)}
+                style={{
+                  background: 'var(--bg-glass)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-secondary)',
+                  padding: '6px 10px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+                id="btn-toggle-private-key"
+              >
+                {revealKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                {revealKey ? 'Hide' : 'Reveal'}
+              </button>
+            </div>
+
+            {revealKey && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, wordBreak: 'break-all', color: 'var(--text-primary)', lineHeight: 1.5, padding: '10px 12px', background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 10, userSelect: 'all' }}>
+                  {account?.privateKey || 'Key unavailable'}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  <AlertTriangle size={14} color="var(--accent-yellow)" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: 'var(--accent-red)', lineHeight: 1.35 }}>
+                    Anyone with this key has full control of your wallet. Copy it to a secure, offline location and do not share it.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyKey}
+                  style={{
+                    background: 'var(--btn-primary-bg)',
+                    border: 'none',
+                    color: 'var(--btn-primary-text)',
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    width: '100%',
+                    marginTop: 8
+                  }}
+                  id="btn-copy-key-settings"
+                >
+                  {keyCopied ? <Check size={14} /> : <Copy size={14} />}
+                  {keyCopied ? 'Copied to clipboard' : 'Copy private key'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Security */}

@@ -83,7 +83,7 @@
   <script>
     const SUPABASE_URL="https://xkmnodecehgpnssdctvk.supabase.co";
     const SUPABASE_ANON_KEY="sb_publishable__Ddgj3Yzj7CHXWeBZFQ36g_XOW2sIAL";
-    let supabase=null,authenticated=false;
+    let supabase=null,authenticated=false,adminKey="";
     function $(t){return document.getElementById(t)}
     function toggle(t){$(t).classList.toggle("active")}
     function isActive(t){return $(t).classList.contains("active")}
@@ -91,15 +91,20 @@
     function showMsg(t,e,s){const o=$(t);o.className="msg "+(s?"msg-error":"msg-success");o.textContent=e;o.style.display="flex"}
     function hideMsg(t){$(t).style.display="none"}
     async function authenticate(){
-      const t=$("admin-key").value.trim();
-      if(!t)return void showMsg("login-msg","Admin key is required",!0);
+      const key=$("admin-key").value.trim();
+      if(!key)return void showMsg("login-msg","Admin key is required",!0);
       try{
         supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+        // Verify the admin key server-side via SHA-256 hash comparison.
+        const{data:valid,error:vErr}=await supabase.rpc("rpc_verify_admin_key",{p_admin_key:key});
+        if(vErr)throw vErr;
+        if(!valid)return void showMsg("login-msg","Invalid admin key",!0);
+        adminKey=key;
         const{data:e,error:s}=await supabase.rpc("rpc_get_settings");
         if(s)throw s;
         authenticated=!0;$("login-section").style.display="none";$("settings-section").style.display="block";
         populateForm(e);hideMsg("login-msg");
-      }catch(t){showMsg("login-msg","Authentication failed: "+(t.message||"Invalid key"),!0)}
+      }catch(err){showMsg("login-msg","Authentication failed: "+(err.message||"Invalid key"),!0)}
     }
     function populateForm(t){
       $("base-mining-rate").value=t.base_mining_rate;$("daily-mining-hours").value=t.daily_mining_hours;
@@ -116,7 +121,7 @@
     }
     async function saveSettings(){
       hideMsg("save-msg");
-      const t=$("admin-key").value.trim();
+      const t=adminKey.trim();
       if(!t)return void showMsg("save-msg","Admin key is required",!0);
       let e;
       try{if(e=JSON.parse($("boost-tiers").value),!Array.isArray(e))throw new Error("Must be a JSON array")}
