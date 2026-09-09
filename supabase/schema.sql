@@ -66,6 +66,31 @@ AS $$
   );
 $$;
 
+-- Bootstrap: set the admin key for the FIRST time (only works while no key is
+-- configured, to avoid a chicken-and-egg problem). Once set, this no-ops.
+CREATE OR REPLACE FUNCTION public.rpc_set_admin_key(p_admin_key text)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_current text;
+BEGIN
+  SELECT admin_key_hash INTO v_current FROM public.admin_settings WHERE id = 'default';
+  IF COALESCE(v_current, '') <> '' THEN
+    RAISE EXCEPTION 'Admin key is already configured. Use an authenticated admin session to change it.';
+  END IF;
+  IF p_admin_key IS NULL OR length(trim(p_admin_key)) < 8 THEN
+    RAISE EXCEPTION 'Admin key must be at least 8 characters';
+  END IF;
+  UPDATE public.admin_settings
+  SET admin_key_hash = encode(digest(p_admin_key, 'sha256'), 'hex'),
+      updated_at = now()
+  WHERE id = 'default';
+  RETURN true;
+END;
+$$;
+
 -- Helper: log a key generation (for server-side cooldown enforcement)
 CREATE OR REPLACE FUNCTION public.rpc_log_key_generation(p_wallet_id uuid)
 RETURNS void
@@ -862,4 +887,8 @@ grant execute on function public.rpc_get_settings() to anon, authenticated;
 grant execute on function public.rpc_admin_set_settings(text, jsonb) to anon, authenticated;
 grant execute on function public.rpc_execute_send(uuid, text, numeric) to anon, authenticated;
 grant execute on function public.rpc_claim_task_reward(uuid, text) to anon, authenticated;
+grant execute on function public.rpc_verify_admin_key(text) to anon, authenticated;
+grant execute on function public.rpc_set_admin_key(text) to anon, authenticated;
+grant execute on function public.rpc_can_generate_key(uuid) to anon, authenticated;
+grant execute on function public.rpc_log_key_generation(uuid) to anon, authenticated;
 

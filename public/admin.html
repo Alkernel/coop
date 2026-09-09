@@ -46,6 +46,13 @@
       <div class="field"><label>Admin Key</label><input type="password" id="admin-key" placeholder="Enter admin key..."/></div>
       <button class="btn" id="login-btn" onclick="authenticate()">Unlock</button>
       <div id="login-msg" class="msg"></div>
+      <div style="margin-top:14px;font-size:12px;color:var(--text-tertiary)">
+        First time? Run once after the schema is applied: open the Supabase SQL
+        editor and run <code>select public.rpc_set_admin_key('your-secret-key');</code>
+        (min 8 characters), or enter a new key below to set it now.
+      </div>
+      <div class="field" style="margin-top:10px"><label>Set First Admin Key</label><input type="password" id="new-admin-key" placeholder="New admin key (min 8 chars)"/></div>
+      <button class="btn btn-secondary" onclick="setupFirstKey()">Set Admin Key</button>
     </div>
     <div id="settings-section" style="display:none">
       <div class="card"><div class="card-title">Mining</div>
@@ -86,6 +93,19 @@
     let supabase=null,authenticated=false,adminKey="";
     function $(t){return document.getElementById(t)}
     function toggle(t){$(t).classList.toggle("active")}
+    function setupFirstKey(){
+      const key=$("new-admin-key").value.trim();
+      if(!key)return void showMsg("login-msg","Enter an admin key first",!0);
+      if(key.length<8)return void showMsg("login-msg","Admin key must be at least 8 characters",!0);
+      try{
+        supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+        supabase.rpc("rpc_set_admin_key",{p_admin_key:key}).then(res=>{
+          if(res.error)return void showMsg("login-msg","Failed: "+res.error.message,!0);
+          showMsg("login-msg","Admin key set! Enter it above to unlock.",!1);
+          $("new-admin-key").value="";
+        });
+      }catch(err){showMsg("login-msg","Error: "+err.message,!0)}
+    }
     function isActive(t){return $(t).classList.contains("active")}
     function setToggle(t,e){e?$(t).classList.add("active"):$(t).classList.remove("active")}
     function showMsg(t,e,s){const o=$(t);o.className="msg "+(s?"msg-error":"msg-success");o.textContent=e;o.style.display="flex"}
