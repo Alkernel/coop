@@ -104,6 +104,37 @@ BEGIN
 END;
 $$;
 
+-- ----------------------------------------------------------
+-- ADMIN USERS (Supabase Auth email + password login)
+-- Link Supabase Auth users (auth.users) to admin access.
+-- Promote an admin once from the SQL editor:
+--   insert into public.admin_users (user_id, email)
+--   select id, email from auth.users where email = 'you@gmail.com'
+--   on conflict (user_id) do nothing;
+-- ----------------------------------------------------------
+create table if not exists public.admin_users (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+alter table public.admin_users enable row level security;
+-- No RLS policies on purpose: clients can never read or write this table.
+-- SECURITY DEFINER functions below are the only way it is accessed.
+
+-- Helper: is the CURRENTLY SIGNED-IN Supabase Auth user an admin?
+create or replace function public.rpc_is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+  select coalesce(
+    exists (select 1 from public.admin_users where user_id = auth.uid()),
+    false
+  );
+$$;
+
 -- Helper: log a key generation (for server-side cooldown enforcement)
 CREATE OR REPLACE FUNCTION public.rpc_log_key_generation(p_wallet_id uuid)
 RETURNS void
@@ -718,7 +749,8 @@ as $$
   from public.admin_settings where id = 'default';
 $$;
 
--- G. Admin update settings (requires admin key; sha256 verified server-side)
+-- G. Admin update settings (requires a signed-in admin from Supabase Auth,
+--    OR a valid admin key; verified server-side)
 create or replace function public.rpc_admin_set_settings(
   p_admin_key text,
   p_updates jsonb
@@ -727,12 +759,24 @@ returns jsonb
 language plpgsql
 security definer
 as $$
+declare
+  v_is_auth_admin boolean;
+  v_key_hash text;
 begin
-  if coalesce((select admin_key_hash from public.admin_settings where id = 'default'), '') = '' then
-    raise exception 'Admin is not configured. Set admin_key_hash first.';
-  end if;
-  if encode(digest(p_admin_key, 'sha256'), 'hex') <> (select admin_key_hash from public.admin_settings where id = 'default') then
-    raise exception 'Unauthorized';
+  -- Path 1: Supabase Auth session belonging to a promoted admin
+  v_is_auth_admin := coalesce(
+    exists (select 1 from public.admin_users where user_id = auth.uid()),
+    false
+  );
+  if not v_is_auth_admin then
+    -- Path 2: admin key fallback
+    v_key_hash := coalesce((select admin_key_hash from public.admin_settings where id = 'default'), '');
+    if v_key_hash = '' then
+      raise exception 'Admin is not configured. Promote an admin user or set admin_key_hash first.';
+    end if;
+    if p_admin_key is null or encode(digest(p_admin_key, 'sha256'), 'hex') <> v_key_hash then
+      raise exception 'Unauthorized';
+    end if;
   end if;
 
   if p_updates ? 'base_mining_rate' then
@@ -915,4 +959,5 @@ grant execute on function public.rpc_set_admin_key(text) to anon, authenticated;
 grant execute on function public.rpc_can_generate_key(uuid) to anon, authenticated;
 grant execute on function public.rpc_log_key_generation(uuid) to anon, authenticated;
 grant execute on function public.rpc_is_admin_configured() to anon, authenticated;
+grant execute on function public.rpc_is_admin() to anon, authenticated;
 
