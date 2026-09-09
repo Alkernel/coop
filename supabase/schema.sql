@@ -275,14 +275,24 @@ drop policy if exists "Allow all on mining_sessions" on public.mining_sessions;
 drop policy if exists "Allow all on boost_purchases" on public.boost_purchases;
 drop policy if exists "Allow all on user_tasks" on public.user_tasks;
 drop policy if exists "Allow all on transactions" on public.transactions;
+drop policy if exists "Allow all on key_generation_log" on public.key_generation_log;
+drop policy if exists "Allow all on admin_settings" on public.admin_settings;
+drop policy if exists "Read tasks" on public.tasks;
+drop policy if exists "Read settings" on public.admin_settings;
+drop policy if exists "Read mining" on public.mining_sessions;
+drop policy if exists "Read boosts" on public.boosts;
+drop policy if exists "Read user_tasks" on public.user_tasks;
+drop policy if exists "Read transactions" on public.transactions;
 
+-- NOTE: admin_settings has NO client policy on purpose. Exposing it would leak
+-- the admin key hash to anyone with the anon key. All reads/writes go through
+-- SECURITY DEFINER RPCs which bypass RLS.
 create policy "Read tasks" on public.tasks for select using (true);
-create policy "Read settings" on public.admin_settings for select using (true);
 create policy "Read mining" on public.mining_sessions for select using (true);
 create policy "Read boosts" on public.boosts for select using (true);
 create policy "Read user_tasks" on public.user_tasks for select using (true);
 create policy "Read transactions" on public.transactions for select using (true);
--- wallets, swap_requests, boost_purchases: no client policies at all.
+-- wallets, swap_requests, boost_purchases, key_generation_log, admin_settings: no client policies at all.
 
 
 -- ==========================================================
