@@ -66,6 +66,19 @@ AS $$
   );
 $$;
 
+-- Helper: return whether an admin key has been configured (avoids showing the
+-- setup form when one already exists). Returns jsonb {configured: bool}.
+CREATE OR REPLACE FUNCTION public.rpc_is_admin_configured()
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+AS $$
+  SELECT jsonb_build_object(
+    'configured', (COALESCE((SELECT admin_key_hash FROM public.admin_settings WHERE id = 'default'), '') <> '')
+  );
+$$;
+
 -- Bootstrap: set the admin key for the FIRST time (only works while no key is
 -- configured, to avoid a chicken-and-egg problem). Once set, this no-ops.
 CREATE OR REPLACE FUNCTION public.rpc_set_admin_key(p_admin_key text)
@@ -891,4 +904,5 @@ grant execute on function public.rpc_verify_admin_key(text) to anon, authenticat
 grant execute on function public.rpc_set_admin_key(text) to anon, authenticated;
 grant execute on function public.rpc_can_generate_key(uuid) to anon, authenticated;
 grant execute on function public.rpc_log_key_generation(uuid) to anon, authenticated;
+grant execute on function public.rpc_is_admin_configured() to anon, authenticated;
 
