@@ -29,33 +29,40 @@
     .toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s}
     .toggle.active::after{transform:translateX(20px)}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:var(--accent);color:var(--bg);border:0;border-radius:12px;font-family:var(--font-sans);font-size:14px;font-weight:700;cursor:pointer;transition:opacity .2s}
-    .btn:hover{opacity:.9}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn:hover{opacity:.9}.btn:disabled{opacity:.5;cursor:not-allowed}
     .btn-secondary{background:var(--bg-input);color:var(--text);border:1px solid var(--border)}
     .msg{padding:10px 14px;border-radius:12px;font-size:13px;margin-top:16px;display:none;align-items:center;gap:8px}
     .msg-error{background:var(--accent-red-bg);color:var(--accent-red)}
     .msg-success{background:var(--accent-green-bg);color:var(--accent-green)}
     .btn-row{display:flex;gap:12px;margin-top:20px}
-    .hint{font-size:12px;color:var(--text-tertiary);line-height:1.5;margin-top:4px}
+    .hint{font-size:12px;color:var(--text-tertiary);line-height:1.5}
+    code{font-family:var(--font-mono);background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;word-break:break-all}
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header"><div><h1>COOP Admin</h1><p>System configuration</p></div></div>
+<!-- UNLOCK -->
     <div id="login-section" class="card">
       <div class="card-title">Admin Authentication</div>
-      <div id="setup-only" style="display:none">
-        <div class="field"><label>Set First Admin Key</label><input type="password" id="new-admin-key" placeholder="Choose a secret (min 8 chars)"/></div>
-        <button class="btn btn-secondary" onclick="setupFirstKey()">Set Admin Key</button>
-        <div class="hint" style="margin-top:10px">No admin key is configured yet. Choose a secret, set it, then use it to unlock.</div>
-      </div>
-      <div id="unlock-only">
-        <div class="field"><label>Admin Key</label><input type="password" id="admin-key" placeholder="Enter admin key..."/></div>
-        <button class="btn" onclick="authenticate()">Unlock</button>
-      </div>
+      <div class="field"><label>Admin Key</label><input type="password" id="admin-key" placeholder="Enter admin key..."/></div>
+      <button class="btn" onclick="authenticate()" id="unlock-btn">Unlock</button>
+      <div class="hint" style="margin-top:10px">Don't know your key? Reset it from the Supabase SQL editor, then use that value here. Instructions below.</div>
       <div id="login-msg" class="msg"></div>
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary)">First time / lost key — how to set one</summary>
+        <div class="hint" style="margin-top:8px">
+          1. Open your Supabase project → <b>SQL Editor</b>.<br/>
+          2. Paste and run (replace the password inside the quotes):<br/>
+          <code>insert into admin_settings (id, admin_key_hash, updated_at) values ('default', encode(digest('CoopAdmin123!','sha256'),'hex'), now()) on conflict (id) do update set admin_key_hash = excluded.admin_key_hash, updated_at = excluded.updated_at;</code><br/>
+          3. Back here, type <code>CoopAdmin123!</code> in the field above and click <b>Unlock</b>.<br/>
+          <span style="color:var(--accent-red)">Keep this key secret. It grants full control of wallet settings.</span>
+        </div>
+      </details>
     </div>
-<div id="settings-section" style="display:none">
+
+    <!-- SETTINGS -->
+    <div id="settings-section" style="display:none">
       <div class="card"><div class="card-title">Mining</div>
         <div class="field"><label>Base Mining Rate (Coopoints/hour)</label><input type="number" id="base-mining-rate" step="0.01"/></div>
         <div class="field"><label>Daily Mining Hours</label><input type="number" id="daily-mining-hours" step="0.01"/></div>
@@ -91,58 +98,32 @@
   <script>
     const SUPABASE_URL="https://xkmnodecehgpnssdctvk.supabase.co";
     const SUPABASE_ANON_KEY="sb_publishable__Ddgj3Yzj7CHXWeBZFQ36g_XOW2sIAL";
-    let supabase=null,authenticated=false,adminKey="";
+    let supabase=null,adminKey="";
     function $(t){return document.getElementById(t)}
     function toggle(t){$(t).classList.toggle("active")}
     function isActive(t){return $(t).classList.contains("active")}
     function setToggle(t,e){e?$(t).classList.add("active"):$(t).classList.remove("active")}
     function showMsg(t,e,s){const o=$(t);o.className="msg "+(s?"msg-error":"msg-success");o.textContent=e;o.style.display="flex"}
     function hideMsg(t){$(t).style.display="none"}
-    // On load, detect whether an admin key has already been configured.
-    async function detectState(){
-      try{
-        supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
-        const{data,error}=await supabase.rpc("rpc_is_admin_configured");
-        if(error)throw error;
-        const configured=!!(data&&data.configured);
-        $("setup-only").style.display=configured?"none":"block";
-        $("unlock-only").style.display=configured?"block":"none";
-      }catch(err){
-        $("setup-only").style.display="block";
-        $("unlock-only").style.display="block";
-      }
-    }
-    function setupFirstKey(){
-      const key=$("new-admin-key").value.trim();
-      if(!key)return void showMsg("login-msg","Enter an admin key first",!0);
-      if(key.length<8)return void showMsg("login-msg","Admin key must be at least 8 characters",!0);
-      hideMsg("login-msg");
-      try{
-        if(!supabase)supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
-        supabase.rpc("rpc_set_admin_key",{p_admin_key:key}).then(res=>{
-          if(res.error)return void showMsg("login-msg","Failed: "+res.error.message,!0);
-          showMsg("login-msg","Admin key set! Enter it in the field above to unlock.",!1);
-          $("setup-only").style.display="none";
-          $("unlock-only").style.display="block";
-          $("new-admin-key").value="";
-        });
-      }catch(err){showMsg("login-msg","Error: "+err.message,!0)}
-    }
     async function authenticate(){
       const key=$("admin-key").value.trim();
       if(!key)return void showMsg("login-msg","Admin key is required",!0);
       hideMsg("login-msg");
+      const btn=$("unlock-btn");btn.disabled=!0;btn.textContent="Checking...";
       try{
         if(!supabase)supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
         const{data:valid,error:vErr}=await supabase.rpc("rpc_verify_admin_key",{p_admin_key:key});
         if(vErr)throw vErr;
-        if(!valid)return void showMsg("login-msg","Invalid admin key",!0);
+        if(!valid)return void showMsg("login-msg","Invalid admin key. If you lost it, reset it via SQL (see instructions).",!0);
         adminKey=key;
         const{data:e,error:s}=await supabase.rpc("rpc_get_settings");
         if(s)throw s;
-        authenticated=!0;$("login-section").style.display="none";$("settings-section").style.display="block";
+        $("login-section").style.display="none";
+        $("settings-section").style.display="block";
         populateForm(e);hideMsg("login-msg");
-      }catch(err){showMsg("login-msg","Authentication failed: "+(err.message||"Invalid key"),!0)}
+      }catch(err){
+        showMsg("login-msg","Authentication failed: "+(err.message||"Invalid key"),!0);
+      }finally{btn.disabled=!1;btn.textContent="Unlock"}
     }
     function populateForm(t){
       $("base-mining-rate").value=t.base_mining_rate;$("daily-mining-hours").value=t.daily_mining_hours;
@@ -159,21 +140,19 @@
     }
     async function saveSettings(){
       hideMsg("save-msg");
-      const t=adminKey.trim();
-      if(!t)return void showMsg("save-msg","Admin key is required",!0);
+      if(!adminKey)return void showMsg("save-msg","Session expired. Reload and unlock again.",!0);
       let e;
       try{if(e=JSON.parse($("boost-tiers").value),!Array.isArray(e))throw new Error("Must be a JSON array")}
       catch(t){return void showMsg("save-msg","Invalid boost tiers JSON: "+t.message,!0)}
       const s={base_mining_rate:parseFloat($("base-mining-rate").value),daily_mining_hours:parseFloat($("daily-mining-hours").value),points_per_coop:parseFloat($("points-per-coop").value),daily_conversion_limit_points:parseFloat($("daily-conversion-limit").value),total_coop_reward_pool:parseFloat($("total-pool").value),remaining_coop_reward_pool:parseFloat($("remaining-pool").value),mining_enabled:isActive("mining-enabled"),conversion_enabled:isActive("conversion-enabled"),boost_purchases_enabled:isActive("boost-purchases-enabled"),boosts_stackable:isActive("boosts-stackable"),swap_rate_limit_seconds:parseInt($("swap-rate-limit").value),boost_tiers:e};
-      $("save-btn").disabled=!0;$("save-btn").textContent="Saving...";
+      const btn=$("save-btn");btn.disabled=!0;btn.textContent="Saving...";
       try{
-        const{error:e}=await supabase.rpc("rpc_admin_set_settings",{admin_key:t,updates:JSON.stringify(s)});
-        if(e)throw e;showMsg("save-msg","Settings saved successfully!",!1);
+        const{error:er}=await supabase.rpc("rpc_admin_set_settings",{p_admin_key:adminKey,p_updates:JSON.stringify(s)});
+        if(er)throw er;showMsg("save-msg","Settings saved successfully!",!1);
       }catch(t){showMsg("save-msg","Save failed: "+t.message,!0)}
-      finally{$("save-btn").disabled=!1;$("save-btn").textContent="Save Settings"}
+      finally{btn.disabled=!1;btn.textContent="Save Settings"}
     }
     $("admin-key").addEventListener("keypress",(t)=>{"Enter"===t.key&&authenticate()});
-    detectState();
   </script>
 </body>
 </html>
