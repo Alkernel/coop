@@ -136,10 +136,11 @@ stable
 security definer
 as $$
   select coalesce(
-    max(case when created_at > now() - interval '1 minute' then true else false end
+    (
+      select (max(case when created_at > now() - interval '1 minute' then 1 else 0 end) = 1)
+      from public.key_generation_log
+      where wallet_id = p_wallet_id
     ), false)
-  from public.key_generation_log
-  where wallet_id = p_wallet_id;
 $$;
 
 -- ----------------------------------------------------------
