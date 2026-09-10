@@ -50,14 +50,14 @@
       <button class="btn" onclick="signIn()" id="signin-btn">Sign In</button>
       <div id="login-msg" class="msg"></div>
       <details style="margin-top:12px">
-        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary)">First time setup — grant admin access to your email</summary>
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary)">First time setup â€” grant admin access to your email</summary>
         <div class="hint" style="margin-top:8px">
-          1. Open your Supabase project → <b>SQL Editor</b>.<br/>
-          2. Paste and run (replace with YOUR email — the one you registered in Supabase Auth):<br/>
+          1. Open your Supabase project â†’ <b>SQL Editor</b>.<br/>
+          2. Paste and run (replace with YOUR email â€” the one you registered in Supabase Auth):<br/>
           <code>insert into public.admin_users (user_id, email) select id, email from auth.users where email = 'you@gmail.com' on conflict (user_id) do nothing;</code><br/>
           3. Come back here and sign in with that email + password.<br/>
           <span style="color:var(--accent-red)">Only emails inserted into admin_users get admin access.</span><br/><br/>
-          <b>If sign-in says a function is missing</b>, reload the API cache: Supabase Dashboard → Settings → API → <b>Reload schema cache</b> (or Restart project).
+          <b>If sign-in says a function is missing</b>, reload the API cache: Supabase Dashboard â†’ Settings â†’ API â†’ <b>Reload schema cache</b> (or Restart project).
         </div>
       </details>
       <details style="margin-top:8px">
@@ -107,14 +107,12 @@
     if (!window.supabase || typeof window.supabase.createClient !== 'function') {
       document.addEventListener('DOMContentLoaded', function () {
         var m = document.getElementById('login-msg');
-        if (m) { m.className = 'msg msg-error'; m.textContent = 'Failed to load Supabase library — check your internet connection and reload.'; m.style.display = 'flex'; }
+        if (m) { m.className = 'msg msg-error'; m.textContent = 'Failed to load Supabase library â€” check your internet connection and reload.'; m.style.display = 'flex'; }
       });
     }
     const SUPABASE_URL="https://xkmnodecehgpnssdctvk.supabase.co";
-  <script>
-    const SUPABASE_URL="https://xkmnodecehgpnssdctvk.supabase.co";
     const SUPABASE_ANON_KEY="sb_publishable__Ddgj3Yzj7CHXWeBZFQ36g_XOW2sIAL";
-    let supabase=null,usingKey=false;
+    let sb=null,usingKey=false;
     function $(t){return document.getElementById(t)}
     function toggle(t){$(t).classList.toggle("active")}
     function isActive(t){return $(t).classList.contains("active")}
@@ -122,11 +120,11 @@
     function showMsg(t,e,s){const o=$(t);o.className="msg "+(s?"msg-error":"msg-success");o.textContent=e;o.style.display="flex"}
     function hideMsg(t){$(t).style.display="none"}
     function getClient(){
-      if(!supabase)supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
-      return supabase;
+      if(!sb)sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+      return sb;
     }
     async function openPanel(){
-      const{data:e,error:s}=await supabase.rpc("rpc_get_settings");
+      const{data:e,error:s}=await sb.rpc("rpc_get_settings");
       if(s)throw s;
       $("login-section").style.display="none";
       $("settings-section").style.display="block";
@@ -134,24 +132,31 @@
       populateForm(e);hideMsg("login-msg");
     }
     async function signIn(){
+      console.log("[admin-diag] signIn() handler executed (click was received)");
       const email=$("admin-email").value.trim(),password=$("admin-password").value;
+      console.log("[admin-diag] form values read: email="+(email?'"'+email+'"':'<empty>')+" password="+(password?"<filled "+password.length+" chars>":"<empty>"));
       if(!email||!password)return void showMsg("login-msg","Enter your email and password",!0);
       hideMsg("login-msg");
       const btn=$("signin-btn");btn.disabled=!0;btn.textContent="Signing in...";
       try{
         getClient();
-        const{data,error}=await supabase.auth.signInWithPassword({email,password});
-        if(error)throw error;
-        const{data:isAdmin,error:aErr}=await supabase.rpc("rpc_is_admin");
-        if(aErr)throw aErr;
+        console.log("[admin-diag] calling sb.auth.signInWithPassword...");
+        const{data,error}=await sb.auth.signInWithPassword({email,password});
+        if(error){console.error("[admin-diag] SUPABASE ERROR from signInWithPassword:",{message:error.message,code:error.code,status:error.status});throw error}
+        console.log("[admin-diag] signInWithPassword succeeded â€” session established for",data.user&&data.user.email);
+        const{data:isAdmin,error:aErr}=await sb.rpc("rpc_is_admin");
+        if(aErr){console.error("[admin-diag] SUPABASE ERROR from rpc_is_admin:",aErr);throw aErr}
+        console.log("[admin-diag] rpc_is_admin returned:",isAdmin);
         if(!isAdmin){
-          await supabase.auth.signOut();
+          await sb.auth.signOut();
           throw new Error("This account is not an admin. Run the setup SQL below to add your email to admin_users, then try again.");
         }
         usingKey=false;
         await openPanel();
+        console.log("[admin-diag] admin panel opened successfully");
         showMsg("save-msg","Signed in as "+email,!1);
       }catch(err){
+        console.error("[admin-diag] sign-in stopped with error:",err);
         showMsg("login-msg","Sign-in failed: "+(err.message||"invalid credentials"),!0);
       }finally{btn.disabled=!1;btn.textContent="Sign In"}
     }
@@ -162,7 +167,7 @@
       const btn=$("key-btn");btn.disabled=!0;btn.textContent="Checking...";
       try{
         getClient();
-        const{data:valid,error:vErr}=await supabase.rpc("rpc_verify_admin_key",{p_admin_key:key});
+        const{data:valid,error:vErr}=await sb.rpc("rpc_verify_admin_key",{p_admin_key:key});
         if(vErr)throw vErr;
         if(!valid)return void showMsg("login-msg","Invalid admin key.",!0);
         usingKey=true;
@@ -172,7 +177,7 @@
       }finally{btn.disabled=!1;btn.textContent="Unlock with Key"}
     }
     async function signOut(){
-      try{if(supabase)await supabase.auth.signOut()}catch(e){}
+      try{if(supabase)await sb.auth.signOut()}catch(e){}
       usingKey=false;
       $("settings-section").style.display="none";
       $("login-section").style.display="block";
@@ -181,9 +186,9 @@
     async function restoreSession(){
       try{
         getClient();
-        const{data:{session}}=await supabase.auth.getSession();
+        const{data:{session}}=await sb.auth.getSession();
         if(!session)return;
-        const{data:isAdmin}=await supabase.rpc("rpc_is_admin");
+        const{data:isAdmin}=await sb.rpc("rpc_is_admin");
         if(isAdmin){await openPanel();showMsg("save-msg","Signed in as "+(session.user.email||"admin"),!1)}
       }catch(e){}
     }
@@ -197,7 +202,7 @@
     }
     async function loadSettings(){
       hideMsg("save-msg");
-      try{const{data:t,error:e}=await supabase.rpc("rpc_get_settings");if(e)throw e;populateForm(t)}
+      try{const{data:t,error:e}=await sb.rpc("rpc_get_settings");if(e)throw e;populateForm(t)}
       catch(t){showMsg("save-msg","Failed to load: "+t.message,!0)}
     }
     async function saveSettings(){
@@ -209,7 +214,7 @@
       const s={base_mining_rate:parseFloat($("base-mining-rate").value),daily_mining_hours:parseFloat($("daily-mining-hours").value),points_per_coop:parseFloat($("points-per-coop").value),daily_conversion_limit_points:parseFloat($("daily-conversion-limit").value),total_coop_reward_pool:parseFloat($("total-pool").value),remaining_coop_reward_pool:parseFloat($("remaining-pool").value),mining_enabled:isActive("mining-enabled"),conversion_enabled:isActive("conversion-enabled"),boost_purchases_enabled:isActive("boost-purchases-enabled"),boosts_stackable:isActive("boosts-stackable"),swap_rate_limit_seconds:parseInt($("swap-rate-limit").value),boost_tiers:e};
       const btn=$("save-btn");btn.disabled=!0;btn.textContent="Saving...";
       try{
-        const{error:er}=await supabase.rpc("rpc_admin_set_settings",{p_admin_key:usingKey?$("admin-key").value.trim():null,p_updates:JSON.stringify(s)});
+        const{error:er}=await sb.rpc("rpc_admin_set_settings",{p_admin_key:usingKey?$("admin-key").value.trim():null,p_updates:JSON.stringify(s)});
         if(er)throw er;showMsg("save-msg","Settings saved successfully!",!1);
       }catch(t){showMsg("save-msg","Save failed: "+t.message,!0)}
       finally{btn.disabled=!1;btn.textContent="Save Settings"}
@@ -218,6 +223,16 @@
     $("admin-email").addEventListener("keypress",(t)=>{"Enter"===t.key&&signIn()});
     $("admin-password").addEventListener("keypress",(t)=>{"Enter"===t.key&&signIn()});
     restoreSession();
+    // ---- TEMP DIAGNOSTICS (safe to remove once login is verified) ----
+    window.addEventListener("error",function(e){console.error("[admin-diag] window error:",e.message,"at",e.filename+":"+e.lineno+":"+e.colno)});
+    document.addEventListener("DOMContentLoaded",function(){
+      var b=document.getElementById("signin-btn");
+      if(b){b.addEventListener("click",function(){console.log("[admin-diag] click event reached #signin-btn")},!0);
+        var r=b.getBoundingClientRect(),p=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+        console.log("[admin-diag] #signin-btn rect:",JSON.stringify(r),"element at center:",p===b||b.contains(p)?"button itself (not overlaid)":p);}
+      else console.error("[admin-diag] #signin-btn NOT FOUND in DOM");
+      console.log("[admin-diag] signIn defined?",typeof window.signIn,"| supabase lib loaded?",!!window.supabase);
+    });
   </script>
 </body>
 </html>

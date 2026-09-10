@@ -6,7 +6,7 @@
 -- ============================================================
 
 insert into public.admin_users (user_id, email)
-select id, email from auth.users where email = 'Alkernel410@gmail.com'
+select id, email from auth.users where email = 'Alkerenl410@gmail.com'
 on conflict (user_id) do update set email = excluded.email;
 
 -- Verify: should return exactly one row with your email
