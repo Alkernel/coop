@@ -54,7 +54,7 @@
         <div class="hint" style="margin-top:8px">
           1. Open your Supabase project â†’ <b>SQL Editor</b>.<br/>
           2. Paste and run (replace with YOUR email â€” the one you registered in Supabase Auth):<br/>
-          <code>insert into public.admin_users (user_id, email) select id, email from auth.users where email = 'you@gmail.com' on conflict (user_id) do nothing;</code><br/>
+          <code>insert into public.admin_users (user_id, email) select id, email from auth.users where lower(email) = lower('you@gmail.com') on conflict (user_id) do nothing;</code><br/>
           3. Come back here and sign in with that email + password.<br/>
           <span style="color:var(--accent-red)">Only emails inserted into admin_users get admin access.</span><br/><br/>
           <b>If sign-in says a function is missing</b>, reload the API cache: Supabase Dashboard â†’ Settings â†’ API â†’ <b>Reload schema cache</b> (or Restart project).
