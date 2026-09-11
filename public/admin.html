@@ -3,23 +3,23 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>COOP Admin Panel</title>
+  <title>COOP Admin  Management Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    :root{--bg:#0a0a0a;--bg-card:#141414;--bg-input:#1a1a1a;--border:#2a2a2a;--text:#fff;--text-secondary:#a0a0a0;--text-tertiary:#666;--accent:#fff;--accent-green:#22c55e;--accent-green-bg:rgba(34,197,94,.12);--accent-red:#ef4444;--accent-red-bg:rgba(239,68,68,.12);--font-sans:'Plus Jakarta Sans',system-ui,sans-serif;--font-mono:'JetBrains Mono',monospace}
+    :root{--bg:#0a0a0a;--bg-card:#131313;--bg-soft:#181818;--bg-input:#1a1a1a;--border:#262626;--text:#fff;--text-secondary:#a3a3a3;--text-tertiary:#6b6b6b;--accent:#fff;--accent-green:#22c55e;--accent-green-bg:rgba(34,197,94,.12);--accent-red:#ef4444;--accent-red-bg:rgba(239,68,68,.12);--accent-blue:#38bdf8;--accent-blue-bg:rgba(56,189,248,.12);--accent-amber:#f59e0b;--accent-amber-bg:rgba(245,158,11,.12);--font-sans:'Plus Jakarta Sans',system-ui,sans-serif;--font-mono:'JetBrains Mono',monospace}
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:var(--font-sans);background:var(--bg);color:var(--text);min-height:100vh;padding:24px}
-    .container{max-width:640px;margin:0 auto}
-    .header{display:flex;align-items:center;gap:12px;padding:12px 0 24px 0}
+    body{font-family:var(--font-sans);background:var(--bg);color:var(--text);min-height:100vh}
+    .wrap{display:flex;min-height:100vh;max-width:1440px;margin:0 auto}
+    .header{display:flex;align-items:center;gap:12px;padding:12px 0 24px 0;flex-wrap:wrap}
     .header h1{font-size:22px;font-weight:800;letter-spacing:.5px}
     .header p{font-size:13px;color:var(--text-secondary);font-weight:500}
     .card{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px}
     .card-title{font-size:12px;font-weight:800;letter-spacing:1px;color:var(--text-tertiary);margin-bottom:12px;text-transform:uppercase}
     label{display:block;font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:6px}
-    input[type=text],input[type=password],input[type=number],textarea{width:100%;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-sans);font-size:14px;outline:0;transition:border-color .2s}
-    input:focus,textarea:focus{border-color:var(--accent)}
+    input[type=text],input[type=password],input[type=number],input[type=search],select,textarea{width:100%;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-sans);font-size:14px;outline:0;transition:border-color .2s}
+    input:focus,textarea:focus,select:focus{border-color:var(--accent)}
     textarea{font-family:var(--font-mono);font-size:12px;resize:vertical}
     .field{margin-bottom:14px}
     .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0}
@@ -28,211 +28,721 @@
     .toggle.active{background:var(--accent-green)}
     .toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s}
     .toggle.active::after{transform:translateX(20px)}
-    .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:var(--accent);color:var(--bg);border:0;border-radius:12px;font-family:var(--font-sans);font-size:14px;font-weight:700;cursor:pointer;transition:opacity .2s}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;background:var(--accent);color:var(--bg);border:0;border-radius:12px;font-family:var(--font-sans);font-size:14px;font-weight:700;cursor:pointer;transition:opacity .2s}
     .btn:hover{opacity:.9}.btn:disabled{opacity:.5;cursor:not-allowed}
     .btn-secondary{background:var(--bg-input);color:var(--text);border:1px solid var(--border)}
+    .btn-sm{padding:7px 12px;font-size:12px;border-radius:9px}
+    .btn-green{background:var(--accent-green);color:#06110a}
+    .btn-danger{background:var(--accent-red);color:#fff}
+    .btn-row{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
     .msg{padding:10px 14px;border-radius:12px;font-size:13px;margin-top:16px;display:none;align-items:center;gap:8px}
     .msg-error{background:var(--accent-red-bg);color:var(--accent-red)}
     .msg-success{background:var(--accent-green-bg);color:var(--accent-green)}
-    .btn-row{display:flex;gap:12px;margin-top:20px}
     .hint{font-size:12px;color:var(--text-tertiary);line-height:1.5}
     code{font-family:var(--font-mono);background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px;word-break:break-all}
+    .mono{font-family:var(--font-mono);font-size:12px;word-break:break-all}
+  /* Sidebar & layout */
+    .wrap{display:flex;min-height:100vh;max-width:1440px;margin:0 auto}
+    .sidebar{width:248px;flex-shrink:0;background:var(--bg-soft);border-right:1px solid var(--border);padding:22px 16px;position:sticky;top:0;height:100vh;overflow-y:auto}
+    .brand{font-size:18px;font-weight:800;letter-spacing:.5px;margin-bottom:4px}
+    .brand small{display:block;font-size:11px;color:var(--text-tertiary);font-weight:600;letter-spacing:1px;text-transform:uppercase}
+    .nav{margin-top:18px;display:flex;flex-direction:column;gap:2px}
+    .nav a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;color:var(--text-secondary);text-decoration:none;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,color .15s}
+    .nav a:hover{background:var(--bg-input);color:var(--text)}
+    .nav a.active{background:var(--accent-green-bg);color:var(--accent-green)}
+    .nav .navgroup{font-size:10px;letter-spacing:1.5px;color:var(--text-tertiary);font-weight:800;text-transform:uppercase;padding:14px 12px 4px 12px}
+    .main{flex:1;padding:22px 26px;min-width:0}
+    .main-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+    .main-head h2{font-size:22px;font-weight:800}
+    .main-head p{font-size:13px;color:var(--text-secondary)}
+    .section{display:none}.section.active{display:block}
+    .stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+    .stat{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:14px 16px}
+    .stat .k{font-size:11px;color:var(--text-tertiary);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px}
+    .stat .v{font-size:19px;font-weight:800;font-family:var(--font-mono)}
+    .stat .v small{font-size:11px;color:var(--text-tertiary);font-weight:600}
+    .stat.green .v{color:var(--accent-green)}.stat.blue .v{color:var(--accent-blue)}.stat.amber .v{color:var(--accent-amber)}.stat.red .v{color:var(--accent-red)}
+    .table-wrap{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:auto}
+    table{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
+    th{background:var(--bg-soft);color:var(--text-tertiary);font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)}
+    td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+    tr:last-child td{border-bottom:0}
+    tr.clickable{cursor:pointer;transition:background .15s}tr.clickable:hover{background:var(--bg-soft)}
+    .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:700;white-space:nowrap}
+    .pill.green{background:var(--accent-green-bg);color:var(--accent-green)}.pill.blue{background:var(--accent-blue-bg);color:var(--accent-blue)}.pill.amber{background:var(--accent-amber-bg);color:var(--accent-amber)}.pill.red{background:var(--accent-red-bg);color:var(--accent-red)}.pill.gray{background:var(--bg-input);color:var(--text-tertiary)}
+    .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+    .toolbar input{max-width:260px}
+    .tag{font-size:11px;color:var(--text-tertiary);font-weight:600}
+    .bar-row{display:flex;align-items:center;gap:10px;font-size:12px;margin-bottom:8px}
+    .bar-row .bl{width:70px;flex-shrink:0;color:var(--text-secondary);font-weight:600;font-family:var(--font-mono)}
+    .bar{flex:1;height:12px;background:var(--bg-input);border-radius:6px;overflow:hidden}
+    .bar i{display:block;height:100%;background:var(--accent-green);border-radius:6px;min-width:2px}
+    .feed{display:flex;flex-direction:column;gap:8px}
+    .feed .item{display:flex;align-items:center;gap:10px;background:var(--bg-soft);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:12.5px}
+    .feed .item .ic{flex-shrink:0;width:10px;height:10px;border-radius:3px}
+    .hide{display:none!important}
+    .kv{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
+    .kv:last-child{border-bottom:0}.kv .k{color:var(--text-secondary)}.kv .v{font-weight:600;text-align:right}
+    .menu-btn{display:none}
+    @media(max-width:860px){.sidebar{position:fixed;z-index:50;left:-260px;transition:left .2s;height:100%;top:0}.sidebar.open{left:0}.wrap{display:block}.main{padding:16px}.menu-btn{display:inline-flex}}
+    h3.sub{font-size:15px;font-weight:800;margin:16px 0 10px 0}
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header" style="justify-content:space-between"><div><h1>COOP Admin</h1><p>System configuration</p></div><button class="btn btn-secondary" id="signout-btn" onclick="signOut()" style="display:none">Sign Out</button></div>
-<!-- UNLOCK (Email + Password via Supabase Auth) -->
-    <div id="login-section" class="card">
-      <div class="card-title">Admin Sign In</div>
-      <div class="field"><label>Email</label><input type="email" id="admin-email" placeholder="admin@gmail.com" autocomplete="username"/></div>
-      <div class="field"><label>Password</label><input type="password" id="admin-password" placeholder="Your Supabase Auth password" autocomplete="current-password"/></div>
-      <button class="btn" onclick="signIn()" id="signin-btn">Sign In</button>
-      <div id="login-msg" class="msg"></div>
-      <details style="margin-top:12px">
-        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary)">First time setup â€” grant admin access to your email</summary>
-        <div class="hint" style="margin-top:8px">
-          1. Open your Supabase project â†’ <b>SQL Editor</b>.<br/>
-          2. Paste and run (replace with YOUR email â€” the one you registered in Supabase Auth):<br/>
-          <code>insert into public.admin_users (user_id, email) select id, email from auth.users where lower(email) = lower('you@gmail.com') on conflict (user_id) do nothing;</code><br/>
-          3. Come back here and sign in with that email + password.<br/>
-          <span style="color:var(--accent-red)">Only emails inserted into admin_users get admin access.</span><br/><br/>
-          <b>If sign-in says a function is missing</b>, reload the API cache: Supabase Dashboard â†’ Settings â†’ API â†’ <b>Reload schema cache</b> (or Restart project).
-        </div>
-      </details>
-      <details style="margin-top:8px">
-        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary)">Sign in with admin key instead</summary>
-        <div class="field" style="margin-top:10px"><label>Admin Key</label><input type="password" id="admin-key" placeholder="Fallback admin key..."/></div>
-        <button class="btn btn-secondary" onclick="signInWithKey()" id="key-btn">Unlock with Key</button>
-        <div class="hint" style="margin-top:8px">The key must already be stored in the database (set once via SQL). Email login is recommended.</div>
-      </details>
-    </div>
-
-    <!-- SETTINGS -->
-    <div id="settings-section" style="display:none">
-      <div class="card"><div class="card-title">Mining</div>
-        <div class="field"><label>Base Mining Rate (Coopoints/hour)</label><input type="number" id="base-mining-rate" step="0.01"/></div>
-        <div class="field"><label>Daily Mining Hours</label><input type="number" id="daily-mining-hours" step="0.01"/></div>
-        <div class="toggle-row"><label>Mining Enabled</label><div class="toggle" id="mining-enabled" onclick="toggle('mining-enabled')"></div></div>
+<div id="login-zone">
+  <div class="wrap" style="justify-content:center;align-items:flex-start;padding:60px 16px 40px;background:var(--bg);min-height:100vh">
+    <div class="container" style="width:100%">
+      <div class="header" style="justify-content:space-between">
+        <div><h1>COOP Admin</h1><p>Management dashboard</p></div>
       </div>
-      <div class="card"><div class="card-title">Conversion</div>
-        <div class="field"><label>Points Per COOP (ratio)</label><input type="number" id="points-per-coop" step="0.01"/></div>
-        <div class="field"><label>Daily Conversion Limit (points)</label><input type="number" id="daily-conversion-limit" step="0.01"/></div>
-        <div class="toggle-row"><label>Conversion Enabled</label><div class="toggle" id="conversion-enabled" onclick="toggle('conversion-enabled')"></div></div>
+      <div class="card">
+        <div class="card-title">Admin Sign In</div>
+        <div class="field"><label>Email (Supabase Auth)</label><input type="email" id="admin-email" placeholder="admin@coopcoin.com" autocomplete="username"/></div>
+        <div class="field"><label>Password</label><input type="password" id="admin-password" placeholder="Your Supabase Auth password" autocomplete="current-password"/></div>
+        <button class="btn" onclick="signIn()" id="signin-btn">Sign In</button>
+        <div id="login-msg" class="msg"></div>
+        <details style="margin-top:12px">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary)">First-time setup  grant admin access to your email</summary>
+          <div class="hint" style="margin-top:8px">
+            1. In Supabase  <b>SQL Editor</b>, run (replace with YOUR email registered in Auth):<br/>
+            <code>insert into public.admin_users (user_id, email) select id, email from auth.users where lower(email) = lower('you@gmail.com') on conflict (user_id) do nothing;</code><br/>
+            2. Then sign in above with that email + password.<br/>
+            <span style="color:var(--accent-red)">Only emails in admin_users get admin access.</span><br/><br/>
+            Then run <code>supabase/admin-dashboard.sql</code> if you haven't yet (creates the dashboard RPCs). If a function is reported missing, reload schema cache: Supabase  Settings  API  <b>Reload schema cache</b>.
+          </div>
+        </details>
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary)">Sign in with Admin Key instead</summary>
+          <div class="field" style="margin-top:10px"><label>Admin Key</label><input type="password" id="admin-key" placeholder="Admin key (stored server-side)..."/></div>
+          <button class="btn btn-secondary" onclick="signInWithKey()" id="key-btn">Unlock with Key</button>
+          <div class="hint" style="margin-top:8px">The key must already be saved to the database (set once via SQL).</div>
+        </details>
       </div>
-      <div class="card"><div class="card-title">COOP Reward Pool</div>
-        <div class="field"><label>Total COOP Reward Pool</label><input type="number" id="total-pool" step="0.01"/></div>
-        <div class="field"><label>Remaining COOP Reward Pool</label><input type="number" id="remaining-pool" step="0.01"/></div>
-      </div>
-      <div class="card"><div class="card-title">Boosts</div>
-        <div class="toggle-row"><label>Boost Purchases Enabled</label><div class="toggle" id="boost-purchases-enabled" onclick="toggle('boost-purchases-enabled')"></div></div>
-        <div class="toggle-row"><label>Boosts Stackable</label><div class="toggle" id="boosts-stackable" onclick="toggle('boosts-stackable')"></div></div>
-      </div>
-      <div class="card"><div class="card-title">Anti-Abuse</div>
-        <div class="field"><label>Swap Rate Limit (seconds between swaps)</label><input type="number" id="swap-rate-limit" step="1"/></div>
-      </div>
-      <div class="card"><div class="card-title">Boost Tiers (JSON)</div>
-        <div class="field"><textarea id="boost-tiers" rows="8" placeholder="JSON array of boost tiers"></textarea></div>
-      </div>
-      <div class="btn-row">
-        <button class="btn" id="save-btn" onclick="saveSettings()">Save Settings</button>
-        <button class="btn btn-secondary" onclick="loadSettings()">Refresh</button>
-      </div>
-      <div id="save-msg" class="msg"></div>
     </div>
   </div>
+</div>
+
+<div id="panel" class="hide">
+  <button class="btn btn-secondary menu-btn" onclick="toggleSidebar()"> Menu</button>
+  <div class="wrap">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">COOP Admin<small>Management Dashboard</small></div>
+      <nav class="nav" id="main-nav">
+        <div class="navgroup">Dashboard</div>
+        <a data-page="overview" onclick="showSection('overview')">Overview</a>
+        <div class="navgroup">Users</div>
+        <a data-page="users" onclick="showSection('users')">Users</a>
+        <a data-page="wallets" onclick="showSection('wallets')">Wallets</a>
+        <a data-page="transactions" onclick="showSection('transactions')">Transactions</a>
+        <div class="navgroup">Economy</div>
+        <a data-page="coop" onclick="showSection('coop')">Cooptoken / COOP</a>
+        <a data-page="swap" onclick="showSection('swap')">Swap</a>
+        <a data-page="mining" onclick="showSection('mining')">Mining</a>
+        <a data-page="boosts" onclick="showSection('boosts')">Miner Boosts</a>
+        <a data-page="tasks" onclick="showSection('tasks')">Tasks</a>
+        <div class="navgroup">System</div>
+        <a data-page="settings" onclick="showSection('settings')">Settings</a>
+        <a data-page="security" onclick="showSection('security')">Admin Security</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="main-head">
+        <div><h2 id="page-title"></h2><p id="page-desc"></p></div>
+        <button class="btn btn-secondary btn-sm" id="signout-btn" onclick="signOut()">Sign Out</button>
+      </div>
+      <section class="section active" id="sec-overview"><div id="body-overview"></div></section>
+      <section class="section" id="sec-users"><div id="body-users"></div></section>
+      <section class="section" id="sec-wallets"><div id="body-wallets"></div></section>
+      <section class="section" id="sec-transactions"><div id="body-transactions"></div></section>
+      <section class="section" id="sec-coop"><div id="body-coop"></div></section>
+      <section class="section" id="sec-swap"><div id="body-swap"></div></section>
+      <section class="section" id="sec-mining"><div id="body-mining"></div></section>
+      <section class="section" id="sec-boosts"><div id="body-boosts"></div></section>
+      <section class="section" id="sec-tasks"><div id="body-tasks"></div></section>
+      <section class="section" id="sec-settings"><div id="body-settings"></div></section>
+      <section class="section" id="sec-security"><div id="body-security"></div></section>
+    </main>
+  </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script>
-    // Guard: if the CDN library failed to load, show a clear error instead of dead buttons
-    if (!window.supabase || typeof window.supabase.createClient !== 'function') {
-      document.addEventListener('DOMContentLoaded', function () {
-        var m = document.getElementById('login-msg');
-        if (m) { m.className = 'msg msg-error'; m.textContent = 'Failed to load Supabase library â€” check your internet connection and reload.'; m.style.display = 'flex'; }
-      });
-    }
-    const SUPABASE_URL="https://xkmnodecehgpnssdctvk.supabase.co";
-    const SUPABASE_ANON_KEY="sb_publishable__Ddgj3Yzj7CHXWeBZFQ36g_XOW2sIAL";
-    let sb=null,usingKey=false;
-    function $(t){return document.getElementById(t)}
-    function toggle(t){$(t).classList.toggle("active")}
-    function isActive(t){return $(t).classList.contains("active")}
-    function setToggle(t,e){e?$(t).classList.add("active"):$(t).classList.remove("active")}
-    function showMsg(t,e,s){const o=$(t);o.className="msg "+(s?"msg-error":"msg-success");o.textContent=e;o.style.display="flex"}
-    function hideMsg(t){$(t).style.display="none"}
-    function getClient(){
-      if(!sb)sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
-      return sb;
-    }
-    async function openPanel(){
-      const{data:e,error:s}=await sb.rpc("rpc_get_settings");
-      if(s)throw s;
-      $("login-section").style.display="none";
-      $("settings-section").style.display="block";
-      $("signout-btn").style.display="inline-flex";
-      populateForm(e);hideMsg("login-msg");
-    }
-    async function signIn(){
-      console.log("[admin-diag] signIn() handler executed (click was received)");
-      const email=$("admin-email").value.trim(),password=$("admin-password").value;
-      console.log("[admin-diag] form values read: email="+(email?'"'+email+'"':'<empty>')+" password="+(password?"<filled "+password.length+" chars>":"<empty>"));
-      if(!email||!password)return void showMsg("login-msg","Enter your email and password",!0);
-      hideMsg("login-msg");
-      const btn=$("signin-btn");btn.disabled=!0;btn.textContent="Signing in...";
-      try{
-        getClient();
-        console.log("[admin-diag] calling sb.auth.signInWithPassword...");
-        const{data,error}=await sb.auth.signInWithPassword({email,password});
-        if(error){console.error("[admin-diag] SUPABASE ERROR from signInWithPassword:",{message:error.message,code:error.code,status:error.status});throw error}
-        console.log("[admin-diag] signInWithPassword succeeded â€” session established for",data.user&&data.user.email);
-        const{data:isAdmin,error:aErr}=await sb.rpc("rpc_is_admin");
-        if(aErr){console.error("[admin-diag] SUPABASE ERROR from rpc_is_admin:",aErr);throw aErr}
-        console.log("[admin-diag] rpc_is_admin returned:",isAdmin);
-        if(!isAdmin){
-          await sb.auth.signOut();
-          throw new Error("This account is not an admin. Run the setup SQL below to add your email to admin_users, then try again.");
-        }
-        usingKey=false;
-        await openPanel();
-        console.log("[admin-diag] admin panel opened successfully");
-        showMsg("save-msg","Signed in as "+email,!1);
-      }catch(err){
-        console.error("[admin-diag] sign-in stopped with error:",err);
-        showMsg("login-msg","Sign-in failed: "+(err.message||"invalid credentials"),!0);
-      }finally{btn.disabled=!1;btn.textContent="Sign In"}
-    }
-    async function signInWithKey(){
-      const key=$("admin-key").value.trim();
-      if(!key)return void showMsg("login-msg","Admin key is required",!0);
-      hideMsg("login-msg");
-      const btn=$("key-btn");btn.disabled=!0;btn.textContent="Checking...";
-      try{
-        getClient();
-        const{data:valid,error:vErr}=await sb.rpc("rpc_verify_admin_key",{p_admin_key:key});
-        if(vErr)throw vErr;
-        if(!valid)return void showMsg("login-msg","Invalid admin key.",!0);
-        usingKey=true;
-        await openPanel();
-      }catch(err){
-        showMsg("login-msg","Authentication failed: "+(err.message||"Invalid key"),!0);
-      }finally{btn.disabled=!1;btn.textContent="Unlock with Key"}
-    }
-    async function signOut(){
-      try{if(supabase)await sb.auth.signOut()}catch(e){}
-      usingKey=false;
-      $("settings-section").style.display="none";
-      $("login-section").style.display="block";
-      $("signout-btn").style.display="none";
-    }
-    async function restoreSession(){
-      try{
-        getClient();
-        const{data:{session}}=await sb.auth.getSession();
-        if(!session)return;
-        const{data:isAdmin}=await sb.rpc("rpc_is_admin");
-        if(isAdmin){await openPanel();showMsg("save-msg","Signed in as "+(session.user.email||"admin"),!1)}
-      }catch(e){}
-    }
-    function populateForm(t){
-      $("base-mining-rate").value=t.base_mining_rate;$("daily-mining-hours").value=t.daily_mining_hours;
-      $("points-per-coop").value=t.points_per_coop;$("daily-conversion-limit").value=t.daily_conversion_limit_points;
-      $("total-pool").value=t.total_coop_reward_pool;$("remaining-pool").value=t.remaining_coop_reward_pool;
-      $("swap-rate-limit").value=t.swap_rate_limit_seconds;$("boost-tiers").value=JSON.stringify(t.boost_tiers,null,2);
-      setToggle("mining-enabled",t.mining_enabled);setToggle("conversion-enabled",t.conversion_enabled);
-      setToggle("boost-purchases-enabled",t.boost_purchases_enabled);setToggle("boosts-stackable",t.boosts_stackable);
-    }
-    async function loadSettings(){
-      hideMsg("save-msg");
-      try{const{data:t,error:e}=await sb.rpc("rpc_get_settings");if(e)throw e;populateForm(t)}
-      catch(t){showMsg("save-msg","Failed to load: "+t.message,!0)}
-    }
-    async function saveSettings(){
-      hideMsg("save-msg");
-      if(usingKey&&!$("admin-key").value.trim())return void showMsg("save-msg","Session expired. Reload and unlock again.",!0);
-      let e;
-      try{if(e=JSON.parse($("boost-tiers").value),!Array.isArray(e))throw new Error("Must be a JSON array")}
-      catch(t){return void showMsg("save-msg","Invalid boost tiers JSON: "+t.message,!0)}
-      const s={base_mining_rate:parseFloat($("base-mining-rate").value),daily_mining_hours:parseFloat($("daily-mining-hours").value),points_per_coop:parseFloat($("points-per-coop").value),daily_conversion_limit_points:parseFloat($("daily-conversion-limit").value),total_coop_reward_pool:parseFloat($("total-pool").value),remaining_coop_reward_pool:parseFloat($("remaining-pool").value),mining_enabled:isActive("mining-enabled"),conversion_enabled:isActive("conversion-enabled"),boost_purchases_enabled:isActive("boost-purchases-enabled"),boosts_stackable:isActive("boosts-stackable"),swap_rate_limit_seconds:parseInt($("swap-rate-limit").value),boost_tiers:e};
-      const btn=$("save-btn");btn.disabled=!0;btn.textContent="Saving...";
-      try{
-        const{error:er}=await sb.rpc("rpc_admin_set_settings",{p_admin_key:usingKey?$("admin-key").value.trim():null,p_updates:JSON.stringify(s)});
-        if(er)throw er;showMsg("save-msg","Settings saved successfully!",!1);
-      }catch(t){showMsg("save-msg","Save failed: "+t.message,!0)}
-      finally{btn.disabled=!1;btn.textContent="Save Settings"}
-    }
-    $("admin-key").addEventListener("keypress",(t)=>{"Enter"===t.key&&signInWithKey()});
-    $("admin-email").addEventListener("keypress",(t)=>{"Enter"===t.key&&signIn()});
-    $("admin-password").addEventListener("keypress",(t)=>{"Enter"===t.key&&signIn()});
-    restoreSession();
-    // ---- TEMP DIAGNOSTICS (safe to remove once login is verified) ----
-    window.addEventListener("error",function(e){console.error("[admin-diag] window error:",e.message,"at",e.filename+":"+e.lineno+":"+e.colno)});
-    document.addEventListener("DOMContentLoaded",function(){
-      var b=document.getElementById("signin-btn");
-      if(b){b.addEventListener("click",function(){console.log("[admin-diag] click event reached #signin-btn")},!0);
-        var r=b.getBoundingClientRect(),p=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
-        console.log("[admin-diag] #signin-btn rect:",JSON.stringify(r),"element at center:",p===b||b.contains(p)?"button itself (not overlaid)":p);}
-      else console.error("[admin-diag] #signin-btn NOT FOUND in DOM");
-      console.log("[admin-diag] signIn defined?",typeof window.signIn,"| supabase lib loaded?",!!window.supabase);
+<script>
+if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+  document.addEventListener('DOMContentLoaded', function () {
+    var m = document.getElementById('login-msg');
+    if (m) { m.className = 'msg msg-error'; m.textContent = 'Failed to load Supabase library  check internet and reload.'; m.style.display = 'flex'; }
+  });
+}
+const SUPABASE_URL = "https://xkmnodecehgpnssdctvk.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable__Ddgj3Yzj7CHXWeBZFQ36g_XOW2sIAL";
+let sb = null, usingKey = false, latestKey = null, _current = 'overview', cache = {};
+
+function $(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function fmtDate(v) {
+  if (!v) return '';
+  var d = new Date(v);
+  if (isNaN(d.getTime())) return '' + v;
+  return d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+}
+function fmtNum(v, dp) {
+  var n = Number(v);
+  if (!isFinite(n)) n = 0;
+  return n.toLocaleString('en-US', { minimumFractionDigits: (dp == null ? 0 : dp), maximumFractionDigits:(dp == null ? 2 : dp) });
+}
+function shortAddr(a) {
+  if (!a) return '';
+  a = String(a);
+  return a.length > 16 ? a.slice(0, 8) + '' + a.slice(-6) : a;
+}
+function showMsg(id, txt, isErr) {
+  var o = $(id);
+  if (!o) return;
+  o.className = 'msg ' + (isErr ? 'msg-error' : 'msg-success');
+  o.textContent = txt;
+  o.style.display = 'flex';
+}
+function hideMsg(id) { var o = $(id); if (o) o.style.display = 'none'; }
+function getClient() {
+  if (!sb) sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  return sb;
+}
+async function rpc(name, args) {
+  var a = args || {};
+  // Admin-key sessions have no Supabase Auth user, so every admin RPC must
+  // receive the key. Inject it automatically wherever the caller left it null.
+  if (usingKey && latestKey && Object.prototype.hasOwnProperty.call(a, 'p_admin_key') && !a.p_admin_key) {
+    a.p_admin_key = latestKey;
+  }
+  var r = await getClient().rpc(name, a);
+  if (r.error) throw new Error(r.error.message);
+  return r.data;
+}
+function toggleSidebar() { $( 'sidebar').classList.toggle( 'open'); }
+function pill(status) {
+  var s = String(status == null ? '' : status).toLowerCase();
+  if (s === 'complete' || s === 'completed' || s === 'claimed' || s === 'mining' || s === 'active') return '<span class="pill green">' + esc(status) + '</span>';
+  if (s === 'pending' || s === 'ready' || s === 'expired') return '<span class="pill amber">' + esc(status) + '</span>';
+  if (s === 'failed') return '<span class="pill red">' + esc(status) + '</span>';
+  return '<span class="pill gray">' + esc(status) + '</span>';
+}
+function txIcon(type) {
+  var c = { send: 'var(--accent-amber)', receive: 'var(--accent-green)', swap: 'var(--accent-blue)', mining: 'var(--accent-amber)', boost: 'var(--accent-green)', task: 'var(--accent-blue)' }[type] || 'var(--text-secondary)';
+  return '<span class="ic" style="background:' + c + '"></span>';
+}
+const PAGE_META = {
+  overview: ['Overview', 'Live numbers across the whole wallet - all served from the real database'],
+  users: ['Users', 'Every wallet account (identified by its generated key/address). Click a row to open the full wallet activity'],
+  wallets: ['Wallets', 'Wallet balances and activity across the network (no private secrets shown)'],
+  transactions: ['Transactions', 'Full send / receive / swap / mining / boost / task activity - internal wallet activity only'],
+  coop: ['Cooptoken / COOP', 'The pre-TGE economy: Cooptoken mined / claimed / swapped + the COOP reward pool'],
+  swap: ['Swap', 'Cooptoken <-> COOP conversions at the configured ratio (points-per-COOP from admin settings)'],
+  mining: ['Mining', 'Mining sessions, claims and rewards - from the wallet mining tables'],
+  boosts: ['Miner Boosts', 'Boost packages, active/expired grants and purchases'],
+  tasks: ['Tasks', 'Task catalog + who completed each task + rewards distributed. Changes reach the wallet instantly'],
+  settings: ['Settings', 'Global economic configuration - the same values the wallet reads'],
+  security: ['Admin Security', 'Who can access this panel and how login is verified (no secrets shown)']
+};
+function showSection(name) {
+  _current = name;
+  var secs = document.querySelectorAll('.section');
+  for (var i = 0; i < secs.length; i++) secs[i].classList.remove( 'active');
+  var sec = $( 'sec-' + name); if (sec) sec.classList.add( 'active');
+  var navs = document.querySelectorAll('#main-nav a');
+  for (var j = 0; j < navs.length; j++) navs[j].classList.toggle( 'active', navs[j].getAttribute( 'data-page') === name );
+  if (PAGE_META[name]) { $( 'page-title').textContent = PAGE_META[name][0]; $( 'page-desc').textContent = PAGE_META[name][1]; }
+  $( 'sidebar').classList.remove( 'open');
+  loaders[name]();
+}
+/* ---------- AUTH ---------- */
+async function signIn() {
+  var email = $( 'admin-email').value.trim(), pass = $( 'admin-password').value;
+  if (!email || !pass) return showMsg( 'login-msg', 'Enter your emailand password', true);
+  hideMsg( 'login-msg');
+  var btn = $( 'signin-btn'); btn.disabled = true; btn.textContent = 'Signing in';
+  try {
+    getClient();
+    var r = await getClient().auth.signInWithPassword({ email: email, password: pass });
+    if (r.error) throw r.error;
+    var isAdmin = await rpc( 'rpc_is_admin');
+    if (!isAdmin) throw new Error( 'Account not in admin_users. Grant access first (see setup below)  or use the Admin Key.', true);
+    usingKey = false;
+    openPanel();
+  } catch (err) {
+    showMsg( 'login-msg', 'Sign-in failed: ' + (err.message || 'invalid credentials'), true);
+  } finally { btn.disabled = false; btn.textContent = 'Sign In'; }
+}
+async function signInWithKey() {
+  var key = $( 'admin-key').value.trim();
+  if (!key) return showMsg( 'login-msg', 'Admin key is required', true);
+  hideMsg( 'login-msg');
+  var btn = $( 'key-btn'); btn.disabled = true; btn.textContent = 'Checking';
+  try {
+    getClient();
+    var ok = await rpc( 'rpc_verify_admin_key', { p_admin_key: key });
+    if (!ok) throw new Error( 'Invalid admin key.' );
+    usingKey = true;
+    latestKey = key;
+    openPanel();
+  } catch (err) {
+    showMsg( 'login-msg', 'Sign-in failed: ' + (err.message || ''), true);
+  } finally { btn.disabled = false; btn.textContent = 'Unlock with Key'; }
+}
+function openPanel() {
+  $( 'login-zone').classList.add( 'hide');
+  $( 'panel').classList.remove( 'hide');
+  $( 'signout-btn').style.display = 'inline-flex';
+  showSection( 'overview');
+}
+function signOut() {
+  if (!usingKey) { try { getClient().auth.signOut(); } catch (e) {} }
+  usingKey = false;
+  latestKey = null;
+  cache = {};
+  $( 'panel').classList.add( 'hide');
+  $( 'login-zone').classList.remove( 'hide');
+}
+/* ---------- LOADERS ---------- */
+const loaders = {
+  overview: renderOverview,
+  users: renderUsers,
+  wallets: renderWallets,
+  transactions: renderTransactions,
+  coop: renderCoop,
+  swap: renderSwap,
+  mining: renderMining,
+  boosts: renderBoosts,
+  tasks: renderTasks,
+  settings: renderSettings,
+  security: renderSecurity
+};
+function stat(k, v, color) {
+  var num = Number(v);
+  var label = (v == null || v === '') ? '0' : (isFinite(num) ? fmtNum(v) : String(v));
+  return '<div class="stat ' + (color || '') + '"><div class="k">' + esc(k) + '</div><div class="v">' + esc(label) + '</div></div>';
+}
+async function renderOverview() {
+  var el = $( 'body-overview');
+  el.innerHTML = '<div class="tag">Loading</div>';
+  try {
+    var ov = await rpc( 'rpc_admin_overview', { p_admin_key: null });
+    var ts = await rpc( 'rpc_admin_timeseries', { p_admin_key: null, p_days: 14 });
+    var recent = await rpc( 'rpc_admin_recent', { p_admin_key: null, p_limit: 10 });
+    var h = '';
+    h += '<div class="stat-grid">';
+    h += stat( 'Total users', ov.total_users) + stat( 'Active users (7d', ov.active_users_7d, 'green');
+    h += stat( 'New users  24h', ov.new_users_24h, 'blue');
+    h += stat( 'Active miners', ov.mining_active, 'amber');
+    h += stat( 'Ready to claim', ov.ready_to_claim, 'green');
+    h += stat( 'Cooptoken mined', ov.mined_total_cooptoken, 'amber');
+    h += stat( 'Mining claims', ov.mining_claims) + stat( 'Swaps', ov.swap_count, 'blue');
+    h += stat( 'Cooptoken swapped', ov.swapped_points, 'blue');
+    h += stat( 'COOP via swaps', ov.coop_from_swaps, 'green');
+    h += stat( 'Task claims', ov.task_claims) + stat( 'Task rewards', ov.task_rewards, 'green');
+    h += stat( 'Sends', ov.send_count, 'amber') + stat( 'Pool remaining', ov.pool_left, 'green');
+    h += '</div>';
+    h += chart( 'New users - last 14 days', ts, 'new_users');
+    h += chart( 'Mining claims - last 14 days', ts, 'mining_claims');
+    h += '<div class="card"><div class="card-title">Recent activity</div><div class="feed">';
+    if (!recent || !recent.length) h += '<div class="tag">No activity yet</div>';
+    else recent.forEach(function(t) {
+      h += '<div class="item">' + txIcon(t.tx_type) + '<span class="mono">' + shortAddr(t.address) + '</span><span>' + esc(t.tx_type) + '</span><b style="margin-left:auto">' + fmtNum(t.amount, 2) + ' ' + esc(t.currency) + '</b><span style="font-size:11px;color:var(--text-tertiary)">' + fmtDate(t.created_at) + '</span></div>';
     });
-  </script>
+    h += '</div></div>';
+    el.innerHTML = h;
+  } catch (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  }
+}
+function chart(title, ts, key) {
+  var h = '<div class="card" style="margin-top:4px"><div class="card-title">' + esc(title) + '</div>';
+  var row = (ts || []).map(function(r) { return Number(r[key]) || 0; });
+  var mx = Math.max.apply(null, row.concat([ 1]));
+  if (ts && ts.length) ts.forEach(function(r) {
+    var v = Number(r[key]) || 0;
+    var pct = Math.max(2, Math.round(100 * v / mx));
+    h += '<div class="bar-row"><span class="bl">' + esc(r.day) + '</span><div class="bar"><i style="width:' + pct + '%"></i></div><span>' + v + '</span></div>';
+  });
+  else h += '<div class="tag">No data</div>';
+  h += '</div>';
+  return h;
+}
+// ---------- WALLETS GRID (used by Users / Wallets) ----------
+async function walletTable(kw, renderer, limit) {
+  var el = $( 'body-' + kw);
+  el.innerHTML = '<div class="tag">Loading</div>';
+  try {
+    var search = $( 'wallet-search-' + kw) ? $( 'wallet-search-' + kw).value : '';
+    var res = await rpc( 'rpc_admin_wallets', { p_admin_key: null, p_search: search || null, p_limit: limit || 100, p_offset: 0, p_order: 'recent' });
+    renderer(res, search);
+  } catch (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  }
+}
+/* ---------- USERS ---------- */
+function renderUsers() { walletTable('users', renderUsersRows, 100); }
+function renderUsersRows(res, search) {
+  var h = '<div class="toolbar"><input type="search" id="wallet-search-users" placeholder="Search address / wallet id" value="' + esc(search) + '" onkeydown="if(event.key===\'Enter\')renderUsers()"><button class="btn btn-secondary btn-sm" onclick="renderUsers()">Search</button></div>';
+  h += '<div class="table-wrap"><table><thead><tr><th>Wallet</th><th>COOP</th><th>Cooptoken</th><th>Mining</th><th>Txs</th><th>Created</th><th>Last active</th></tr></thead><tbody>';
+  (res.rows || []).forEach(function(w) {
+    h += '<tr class="clickable" onclick="openUser(\'' + w.id + '\')"><td class="mono">' + shortAddr(w.address) + '</td><td>' + fmtNum(w.coop_balance, 4) + '</td><td>' + fmtNum(w.cooptoken_balance, 4) + '</td><td>' + pill(w.mining_state) + '</td><td>' + (w.tx_count || 0) + '</td><td style="font-size:11px">' + fmtDate(w.created_at) + '</td><td style="font-size:11px">' + fmtDate(w.last_active_at) + '</td></tr>';
+  });
+  if (!(res.rows || []).length) h += '<tr><td colspan="7">No wallets found</td></tr>';
+  h += '</tbody></table></div>';
+  h += '<div class="tag" style="margin-top:10px">' + (res.total || 0) + ' wallet(s) total</div>';
+  $( 'body-users').innerHTML = h;
+}
+async function openUser(id) {
+  var el = $( 'body-users');
+  el.innerHTML = '<div class="tag">Loading wallet...</div>';
+  try {
+    var d = await rpc( 'rpc_admin_wallet_detail', { p_admin_key: null, p_wallet_id: id });
+    var w = d.wallet || {};
+    var h = '<div class="toolbar"><button class="btn btn-secondary btn-sm" onclick="renderUsers()">&larr; Back to users</button></div>';
+    h += '<div class="card"><div class="card-title">Wallet</div>';
+    h += '<div class="kv"><span class="k">Wallet ID</span><span class="v mono">' + esc(w.id) + '</span></div>';
+    h += '<div class="kv"><span class="k">Address</span><span class="v mono">' + esc(w.address) + '</span></div>';
+    h += '<div class="kv"><span class="k">COOP balance</span><span class="v">' + fmtNum(w.coop_balance, 4) + '</span></div>';
+    h += '<div class="kv"><span class="k">Cooptoken balance</span><span class="v">' + fmtNum(w.cooptoken_balance, 4) + '</span></div>';
+    h += '<div class="kv"><span class="k">Total sent</span><span class="v">' + fmtNum(w.total_sent, 4) + '</span></div>';
+    h += '<div class="kv"><span class="k">Total received</span><span class="v">' + fmtNum(w.total_received, 4) + '</span></div>';
+    h += '<div class="kv"><span class="k">Created</span><span class="v">' + fmtDate(w.created_at) + '</span></div>';
+    h += '<div class="kv"><span class="k">Last active</span><span class="v">' + fmtDate(w.last_active_at) + '</span></div></div>';
+    h += '<div class="card"><div class="card-title">Mining</div>';
+    if (d.mining) {
+      h += '<div class="kv"><span class="k">Status</span><span class="v">' + pill(d.mining.status) + '</span></div>';
+      h += '<div class="kv"><span class="k">Start</span><span class="v">' + fmtDate(d.mining.start_time) + '</span></div>';
+      h += '<div class="kv"><span class="k">End</span><span class="v">' + fmtDate(d.mining.end_time) + '</span></div>';
+      h += '<div class="kv"><span class="k">Base rate</span><span class="v">' + fmtNum(d.mining.base_rate, 4) + ' /h</span></div>';
+      h += '<div class="kv"><span class="k">Boost</span><span class="v">' + (d.mining.boost_pct || 0) + '%</span></div>';
+      h += '<div class="kv"><span class="k">Credited h</span><span class="v">' + fmtNum(d.mining.credited_hours, 4) + '</span></div>';
+      h += '<div class="kv"><span class="k">Reward</span><span class="v">' + fmtNum(d.mining.reward_amount, 4) + '</span></div></div>';
+    } else h += '<div class="tag">No current session</div></div>';
+    h += '<div class="card"><div class="card-title">Tasks</div>';
+    var tasks = d.tasks || [];
+    if (!tasks.length) h += '<div class="tag">No tasks yet</div>';
+    else tasks.forEach(function (t) {
+      h += '<div class="kv"><span class="k">' + esc(t.title || t.task_id) + '</span><span class="v">' + pill(t.status) + '  ' + fmtNum(t.reward, 2) + ' Cooptoken</span></div>';
+    });
+    h += '</div>';
+    h += '<div class="card"><div class="card-title">Transactions</div><div class="table-wrap"><table><thead><tr><th>Type</th><th>Asset</th><th>Amount</th><th>Points</th><th>Status</th><th>Date</th></tr></thead><tbody>';
+    var txs = d.transactions || [];
+    if (!txs.length) h += '<tr><td colspan="6">No transactions</td></tr>';
+    else txs.forEach(function (t) {
+      h += '<tr><td>' + esc(t.tx_type) + '</td><td>' + esc(t.currency) + '</td><td>' + fmtNum(t.amount, 4) + '</td><td>' + (t.points_amount ? fmtNum(t.points_amount, 2) : '') + '</td><td>' + pill(t.status) + '</td><td style="font-size:11px">' + fmtDate(t.created_at) + '</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+    el.innerHTML = h;
+  } catch (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  }
+}
+/* ---------- WALLETS ---------- */
+function renderWallets() { walletTable('wallets', renderWalletsRows, 100); }
+function renderWalletsRows(res, search) {
+  var h = '<div class="toolbar"><input type="search" id="wallet-search-wallets" placeholder="Search address / wallet id" value="' + esc(search) + '" onkeydown="if(event.key===\'Enter\')renderWallets()"><button class="btn btn-secondary btn-sm" onclick="renderWallets()">Search</button></div>';
+  h += '<div class="table-wrap"><table><thead><tr><th>Wallet</th><th>COOP</th><th>Cooptoken</th><th>Sent</th><th>Received</th><th>Mining</th><th>Txs</th><th>Last active</th></tr></thead><tbody>';
+  (res.rows || []).forEach(function (w) {
+    h += '<tr class="clickable" onclick="openUser(\'' + w.id + '\')"><td class="mono">' + shortAddr(w.address) + '</td><td>' + fmtNum(w.coop_balance, 4) + '</td><td>' + fmtNum(w.cooptoken_balance, 4) + '</td><td>' + fmtNum(w.total_sent, 4) + '</td><td>' + fmtNum(w.total_received, 4) + '</td><td>' + pill(w.mining_state) + '</td><td>' + (w.tx_count || 0) + '</td><td style="font-size:11px">' + fmtDate(w.last_active_at) + '</td></tr>';
+  });
+  if (!(res.rows || []).length) h += '<tr><td colspan="8">No wallets found</td></tr>';
+  h += '</tbody></table></div>';
+  h += '<div class="tag" style="margin-top:10px">' + (res.total || 0) + ' wallet(s) total</div>';
+  $( 'body-wallets').innerHTML = h;
+}
+
+/* ---------- TRANSACTIONS ---------- */
+function renderTransactions() {
+  var el = $( 'body-transactions');
+  el.innerHTML = '<div class="tag">Loading</div>';
+  var type = $( 'tx-type-filter') ? $( 'tx-type-filter').value : 'all';
+  var search = $( 'tx-search') ? $( 'tx-search').value : '';
+  rpc( 'rpc_admin_transactions', { p_admin_key: null, p_type: type, p_search: search || null, p_limit: 200, p_offset: 0 }).then(function (res) {
+    var h = '<div class="toolbar"><select id="tx-type-filter" onchange="renderTransactions()">';
+    ['all', 'send', 'receive', 'swap', 'mining', 'boost', 'task'].forEach(function (t) {
+      h += '<option value="' + t + '"' + (type === t ? ' selected' : '') + '>' + t + '</option>';
+    });
+    h += '</select><input type="search" id="tx-search" placeholder="Search address / hash" value="' + esc(search) + '" onkeydown="if(event.key===\'Enter\')renderTransactions()"><button class="btn btn-secondary btn-sm" onclick="renderTransactions()">Filter</button></div>';
+    h += '<div class="table-wrap"><table><thead><tr><th>User</th><th>Type</th><th>Asset</th><th>Amount</th><th>Points</th><th>Status</th><th>Date</th></tr></thead><tbody>';
+    if (!(res.rows || []).length) h += '<tr><td colspan="7">No transactions</td></tr>';
+    else (res.rows || []).forEach(function (t) {
+      h += '<tr><td class="mono">' + shortAddr(t.address) + '</td><td>' + esc(t.tx_type) + '</td><td>' + esc(t.currency) + '</td><td>' + fmtNum(t.amount, 4) + '</td><td>' + (t.points_amount ? fmtNum(t.points_amount, 2) : '') + '</td><td>' + pill(t.status) + '</td><td style="font-size:11px">' + fmtDate(t.created_at) + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+    h += '<div class="tag" style="margin-top:10px">' + (res.total || 0) + ' transaction(s)</div>';
+    el.innerHTML = h;
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  });
+}
+
+/* ---------- COOPTOKEN / COOP ---------- */
+function renderCoop() {
+  var el = $( 'body-coop');
+  el.innerHTML = '<div class="tag">Loading</div>';
+  Promise.all([ rpc( 'rpc_admin_overview', { p_admin_key: null }), rpc( 'rpc_admin_timeseries', { p_admin_key: null, p_days: 14 })] ).then(function (r) {
+    var ov = r[0], ts = r[1];
+    var ppc = ov.points_per_coop;
+    var h = '<div class="stat-grid">';
+    h += stat( 'Cooptoken mined', ov.mined_total_cooptoken, 'amber');
+    h += stat( 'Mining claims', ov.mining_claims, 'green');
+    h += stat( 'Cooptoken swapped', ov.swapped_points, 'blue');
+    h += stat( 'COOP via swaps', ov.coop_from_swaps, 'green');
+    h += stat( 'Total pool', ov.pool_total) + stat( 'Pool remaining', ov.pool_left, 'green');
+    h += stat( 'Swap ratio', ppc + ' Cooptoken = 1 COOP', 'blue');
+    h += '</div>';
+    h += '<div class="card"><div class="card-title">Cooptoken economy breakdown</div><div class="kv"><span class="k">Cooptoken mined (all-time)</span><span class="v">' + fmtNum(ov.mined_total_cooptoken, 2) + ' Cooptoken</span></div>';
+    h += '<div class="kv"><span class="k">Cooptoken swapped to COOP</span><span class="v">' + fmtNum(ov.swapped_points, 2) + ' Cooptoken</span></div>';
+    h += '<div class="kv"><span class="k">COOP allocated via swaps</span><span class="v">' + fmtNum(ov.coop_from_swaps, 4) + ' COOP</span></div>';
+    h += '<div class="kv"><span class="k">COOP reward pool remaining</span><span class="v">' + fmtNum(ov.pool_left, 2) + ' COOP</span></div></div>';
+    h += chart( 'Mined Cooptoken - last 14 days', ts, 'mined_cooptoken');
+    el.innerHTML = h;
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  });
+}
+/* ---------- SWAP ---------- */
+function renderSwap() {
+  var el = $( 'body-swap');
+  el.innerHTML = '<div class="tag">Loading</div>';
+  rpc( 'rpc_admin_swaps', { p_admin_key: null, p_limit: 200, p_offset: 0 }).then(function (res) {
+    var tot = res.totals || { count: 0, points: 0, coop: 0 };
+    var h = '<div class="stat-grid">';
+    h += stat( 'Swaps', tot.count, 'blue');
+    h += stat( 'Cooptoken swapped', tot.points, 'blue');
+    h += stat( 'COOP via swaps', tot.coop, 'green');
+    h += stat( 'Ratio', '1,000 = 1 COOP', 'green');
+    h += '</div>';
+    h += '<div class="table-wrap"><table><thead><tr><th>User</th><th>Cooptoken</th><th>COOP</th><th>Status</th><th>Date</th></tr></thead><tbody>';
+    if (!(res.rows || []).length) h += '<tr><td colspan="5">No swaps yet</td></tr>';
+    else (res.rows || []).forEach(function (s) {
+      h += '<tr><td class="mono">' + shortAddr(s.address) + '</td><td>' + fmtNum(s.points_amount, 2) + '</td><td>' + fmtNum(s.amount, 4) + '</td><td>' + pill(s.status) + '</td><td style="font-size:11px">' + fmtDate(s.created_at) + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+    h += '<div class="tag" style="margin-top:10px">' + (res.total || 0) + ' swap transaction(s)</div>';
+    el.innerHTML = h;
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  });
+}
+
+/* ---------- MINING ---------- */
+function renderMining() {
+  var el = $( 'body-mining');
+  el.innerHTML = '<div class="tag">Loading</div>';
+  rpc( 'rpc_admin_mining', { p_admin_key: null, p_state: 'all', p_limit: 200, p_offset: 0 }).then(function (res) {
+    var st = res.stats || { active: 0, ready: 0, claims: 0, mined: 0 };
+    var h = '<div class="stat-grid">';
+    h += stat( 'Active miners', st.active, 'amber');
+    h += stat( 'Ready to claim', st.ready, 'green');
+    h += stat( 'Completed sessions', st.claims, 'blue');
+    h += stat( 'Cooptoken mined', st.mined, 'green');
+    h += '</div>';
+    h += '<div class="table-wrap"><table><thead><tr><th>User</th><th>Status</th><th>Start</th><th>End</th><th>Base rate</th><th>Boost</th><th>Reward</th></tr></thead><tbody>';
+    if (!(res.rows || []).length) h += '<tr><td colspan="7">No mining sessions</td></tr>';
+    else (res.rows || []).forEach(function (s) {
+      h += '<tr><td class="mono">' + shortAddr(s.address) + '</td><td>' + pill(s.status) + '</td><td style="font-size:11px">' + fmtDate(s.start_time) + '</td><td style="font-size:11px">' + fmtDate(s.end_time) + '</td><td>' + fmtNum(s.base_rate, 2) + '</td><td>' + (s.boost_pct || 0) + '%</td><td>' + fmtNum(s.reward_amount, 2) + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+    el.innerHTML = h;
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  });
+}
+
+/* ---------- BOOSTS ---------- */
+function renderBoosts() {
+  var el = $( 'body-boosts');
+  el.innerHTML = '<div class="tag">Loading</div>';
+  rpc( 'rpc_admin_boosts', { p_admin_key: null }).then(function (res) {
+    var tiers = res.tiers || [];
+    var gs = res.grants_stats || { active: 0, expired: 0 };
+    var h = '<div class="stat-grid">';
+    h += stat( 'Active boost grants', gs.active, 'green');
+    h += stat( 'Expired grants', gs.expired, 'amber');
+    h += stat( 'Purchases enabled', res.purchases_enabled ? 'Yes' : 'No', res.purchases_enabled ? 'green' : 'red');
+    h += '</div>';
+    h += '<div class="card"><div class="card-title">Boost packages</div>';
+    if (!tiers.length) h += '<div class="tag">No tiers configured</div>';
+    else {
+      h += '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Price (USD)</th><th>Boost %</th></tr></thead><tbody>';
+      tiers.forEach(function (t) {
+        h += '<tr><td>' + esc(t.name || t.id) + '</td><td>$' + fmtNum(t.priceUsd, 2) + '</td><td>' + (t.boostPct || 0) + '%</td></tr>';
+      });
+      h += '</tbody></table></div>';
+    }
+    h += '</div>';
+    h += '<div class="card"><div class="card-title">Active / expired grants</div><div class="table-wrap"><table><thead><tr><th>User</th><th>Tier</th><th>Boost</th><th>Expires</th></tr></thead><tbody>';
+    if (!(res.grants || []).length) h += '<tr><td colspan="4">No boost grants</td></tr>';
+    else (res.grants || []).forEach(function (b) {
+      var active = new Date(b.expires_at) > new Date();
+      h += '<tr><td class="mono">' + shortAddr(b.address) + '</td><td>' + esc(b.tier_id) + '</td><td>' + (b.boost_pct || 0) + '%</td><td>' + (active ? '<span class="pill green">active</span> ' : '<span class="pill amber">expired</span> ') + fmtDate(b.expires_at) + '</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+    h += '<div class="card"><div class="card-title">Purchase records</div><div class="table-wrap"><table><thead><tr><th>User</th><th>Tier</th><th>USD</th><th>Bonus</th><th>Status</th><th>Date</th></tr></thead><tbody>';
+    if (!(res.purchases || []).length) h += '<tr><td colspan="6">No purchases yet (payments are Pending/Coming soon until integrated)</td></tr>';
+    else (res.purchases || []).forEach(function (p) {
+      h += '<tr><td class="mono">' + shortAddr(p.address) + '</td><td>' + esc(p.tier_name) + '</td><td>$' + fmtNum(p.cost_usd, 2) + '</td><td>' + fmtNum(p.bonus_reward, 2) + '</td><td>' + pill(p.status) + '</td><td style="font-size:11px">' + fmtDate(p.created_at) + '</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+    el.innerHTML = h;
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  });
+}
+/* ---------- TASKS ---------- */
+function renderTasks() {
+  var el = $( 'body-tasks');
+  el.innerHTML = '<div class="tag">Loading</div>';
+  rpc( 'rpc_admin_tasks', { p_admin_key: null }).then(function (res) {
+    var h = '<div class="toolbar"><button class="btn btn-sm" onclick="taskForm()">+ New task</button></div>';
+    h += '<div class="table-wrap"><table><thead><tr><th>ID</th><th>Title</th><th>Category</th><th>Reward</th><th>Claims</th><th>Distributed</th><th></th></tr></thead><tbody>';
+    if (!(res.rows || []).length) h += '<tr><td colspan="7">No tasks</td></tr>';
+    else (res.rows || []).forEach(function (t) {
+      h += '<tr><td class="mono">' + esc(t.id) + '</td><td>' + esc(t.title) + '</td><td>' + esc(t.category) + '</td><td>' + fmtNum(t.reward_cooptoken, 2) + ' Cooptoken</td><td>' + (t.claims || 0) + '</td><td>' + fmtNum(t.distributed, 2) + '</td><td><button class="btn btn-secondary btn-sm" onclick="taskForm(\'' + t.id + '\')">Edit</button> <button class="btn btn-danger btn-sm" onclick="deleteTask(\'' + t.id + '\')">Del</button></td></tr>';
+    });
+    h += '</tbody></table></div>';
+    el.innerHTML = h;
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  });
+}
+function taskForm(id) {
+  var el = $( 'body-tasks');
+  el.innerHTML = '<div class="toolbar"><button class="btn btn-secondary btn-sm" onclick="renderTasks()">Back to tasks</button></div><div class="card"><div class="card-title">' + (id ? 'Edit task' : 'New task') + '</div>';
+  el.innerHTML += '<div class="field"><label>ID (slug, e.g. task_x)</label><input id="task-id" value="' + esc(id || '') + '"' + (id ? ' disabled' : '') + '/></div>';
+  el.innerHTML += '<div class="field"><label>Title</label><input id="task-title" placeholder="Task title"/></div>';
+  el.innerHTML += '<div class="field"><label>Description</label><input id="task-desc" placeholder="Short description"/></div>';
+  el.innerHTML += '<div class="field"><label>Category</label><select id="task-cat"><option value="social">social</option><option value="special">special</option><option value="all">all</option></select></div>';
+  el.innerHTML += '<div class="field"><label>Reward (Cooptoken)</label><input type="number" id="task-reward" step="0.01" value="0"/></div>';
+  el.innerHTML += '<div class="field"><label>Action URL</label><input id="task-url" placeholder="https://... (optional)"/></div>';
+  el.innerHTML += '<div class="field"><label>Icon</label><input id="task-icon" placeholder="check" value="check"/></div>';
+  el.innerHTML += '<button class="btn btn-green" onclick="saveTask(\'' + esc(id || '') + '\')">Save task</button>';
+}
+async function saveTask() {
+  var payload = {
+    p_id: $( 'task-id').value.trim(),
+    p_title: $( 'task-title').value.trim(),
+    p_description: $( 'task-desc').value.trim(),
+    p_category: $( 'task-cat').value,
+    p_reward: Number($( 'task-reward').value || 0),
+    p_action_url: $( 'task-url').value.trim(),
+    p_icon: $( 'task-icon').value.trim()
+  };
+  if (!payload.p_id || !payload.p_title) { alert('ID and title are required'); return; }
+  try {
+    await rpc( 'rpc_admin_upsert_task', Object.assign({ p_admin_key: null }, payload));
+    $( 'body-tasks').innerHTML = '<div class="msg msg-success" style="display:flex">Task saved. It now appears in the wallet.</div>';
+    setTimeout(renderTasks, 1200);
+  } catch (err) { alert('Save failed: ' + (err.message || '')); }
+}
+async function deleteTask(id) {
+  if (!confirm('Delete task ' + id + '? Users can no longer claim it.')) return;
+  try {
+    await rpc( 'rpc_admin_delete_task', { p_admin_key: null, p_id: id });
+    renderTasks();
+  } catch (err) { alert('Delete failed: ' + (err.message || '')); }
+}
+/* ---------- SETTINGS ---------- */
+function renderSettings() {
+  var el = $( 'body-settings');
+  el.innerHTML = '<div class="tag">Loading</div>';
+  rpc( 'rpc_get_settings').then(function (s) {
+    var tiers = JSON.stringify(s.boost_tiers || [], null, 2);
+    var h = '<div class="card"><div class="card-title">Mining</div>';
+    h += field( 'base-mining-rate', 'Base mining rate (Cooptoken/hour)', s.base_mining_rate);
+    h += field( 'daily-mining-hours', 'Daily mining hours', s.daily_mining_hours);
+    h += toggleField( 'mining-enabled', 'Mining enabled', s.mining_enabled);
+    h += '</div>';
+    h += '<div class="card"><div class="card-title">Swap / Conversion</div>';
+    h += field( 'points-per-coop', 'Points per COOP (swap ratio)', s.points_per_coop);
+    h += field( 'daily-conversion-limit', 'Daily conversion limit (points)', s.daily_conversion_limit_points);
+    h += toggleField( 'conversion-enabled', 'Conversion enabled', s.conversion_enabled);
+    h += field( 'swap-rate-limit', 'Swap rate limit (seconds)', s.swap_rate_limit_seconds);
+    h += '</div>';
+    h += '<div class="card"><div class="card-title">COOP reward pool</div>';
+    h += field( 'total-pool', 'Total COOP reward pool', s.total_coop_reward_pool);
+    h += field( 'remaining-pool', 'Remaining COOP reward pool', s.remaining_coop_reward_pool);
+    h += '</div>';
+    h += '<div class="card"><div class="card-title">Boost packages (JSON)</div>';
+    h += '<div class="field"><textarea id="boost-tiers" rows="8">' + esc(tiers) + '</textarea></div>';
+    h += toggleField( 'boost-purchases-enabled', 'Boost purchases enabled', s.boost_purchases_enabled);
+    h += toggleField( 'boosts-stackable', 'Boosts stackable', s.boosts_stackable);
+    h += '</div>';
+    h += '<div class="btn-row"><button class="btn" onclick="saveSettings()">Save Settings</button><button class="btn btn-secondary" onclick="renderSettings()">Refresh</button></div>';
+    h += '<div id="settings-msg" class="msg"></div>';
+    el.innerHTML = h;
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  });
+}
+function field(id, label, val) {
+  return '<div class="field"><label>' + esc(label) + '</label><input type="number" step="0.01" id="' + id + '" value="' + esc(String(val)) + '"/></div>';
+}
+function toggleField(id, label, on) {
+  return '<div class="toggle-row"><label>' + esc(label) + '</label><div class="toggle ' + (on ? 'active' : '') + '" id="' + id + '" onclick="$(this).classList.toggle(\'active\')"></div></div>';
+}
+function toggleVal(id) { return $(id).classList.contains( 'active'); }
+async function saveSettings() {
+  var updates = {
+    base_mining_rate: $( 'base-mining-rate').value,
+    daily_mining_hours: $( 'daily-mining-hours').value,
+    points_per_coop: $( 'points-per-coop').value,
+    daily_conversion_limit_points: $( 'daily-conversion-limit').value,
+    swap_rate_limit_seconds: $( 'swap-rate-limit').value,
+    total_coop_reward_pool: $( 'total-pool').value,
+    remaining_coop_reward_pool: $( 'remaining-pool').value,
+    mining_enabled: toggleVal( 'mining-enabled'),
+    conversion_enabled: toggleVal( 'conversion-enabled'),
+    boost_purchases_enabled: toggleVal( 'boost-purchases-enabled'),
+    boosts_stackable: toggleVal( 'boosts-stackable')
+  };
+  try { updates.boost_tiers = JSON.parse($( 'boost-tiers').value); }
+  catch (e) { alert( 'boost-tiers JSON is invalid'); return; }
+  try {
+    await rpc( 'rpc_admin_set_settings', { p_admin_key: usingKey ? latestKey : null, p_updates: updates });
+    showMsg( 'settings-msg', 'Settings saved. The wallet now reads the new values.', false);
+  } catch (err) {
+    showMsg( 'settings-msg', 'Save failed: ' + (err.message || ''), true);
+  }
+}
+/* ---------- SECURITY ---------- */
+function renderSecurity() {
+  var el = $( 'body-security');
+  el.innerHTML = '<div class="tag">Loading</div>';
+  var isAdminUser = usingKey;
+  try {
+    getClient().auth.getUser().then(function (r) { isAdminUser = !!(r.data && r.data.user); }).catch(function () { isAdminUser = false; });
+  } catch (e) { isAdminUser = false; }
+  setTimeout(function () {
+    var h = '<div class="card"><div class="card-title">Admin access (admin_users)</div>';
+    h += '<div class="hint">Admin access is granted only to the emails inserted into <code>admin_users</code> (linked to Supabase Auth). Regular wallet users are never admins. No sensitive data is shown here.</div>';
+    h += '<div class="kv"><span class="k">Current session</span><span class="v">' + (usingKey ? 'Admin Key' : 'Supabase Auth') + '</span></div>';
+    h += '<div class="kv"><span class="k">Authenticated</span><span class="v">' + (isAdminUser ? 'yes' : 'no') + '</span></div></div>';
+    h += '<div class="card"><div class="card-title">How access is verified</div>';
+    h += '<div class="hint">Every admin RPC checks server-side (SECURITY DEFINER) that the caller is either a member of <code>admin_users</code> or provides the valid admin-key hash. The browser never holds the service-role key.</div></div>';
+    h += '<div class="card"><div class="card-title">Rotate admin key</div>';
+    h += '<div class="field"><label>New admin key (stored hashed server-side)</label><input type="password" id="new-admin-key" placeholder="Set or rotate admin key..."/></div>';
+    h += '<button class="btn btn-sm" onclick="rotateAdminKey()">Save new admin key</button>';
+    h += '<div class="hint" style="margin-top:10px">Store the hash with: <code>update public.admin_settings set admin_key_hash = encode(sha256(&#39;your_key&#39;),&#39;hex&#39;) where id = &#39;default&#39;;</code></div>';
+    h += '<div id="security-msg" class="msg"></div></div>';
+    el.innerHTML = h;
+  }, 300);
+}
+async function rotateAdminKey() {
+  var key = $( 'new-admin-key').value.trim();
+  if (!key) { alert('Enter a new key'); return; }
+  try {
+    var buf = new TextEncoder().encode(key);
+    var digest = await crypto.subtle.digest('SHA-256', buf);
+    var hashArr = Array.from(new Uint8Array(digest));
+    var hashHex = hashArr.map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    await rpc( 'rpc_admin_set_settings', { p_admin_key: usingKey ? latestKey : null, p_updates: { admin_key_hash: hashHex } });
+    showMsg( 'security-msg', 'Admin key updated (hashed).', false);
+  } catch (err) { showMsg( 'security-msg', 'Failed: ' + (err.message || ''), true); }
+}
+</script>
 </body>
-</html>
