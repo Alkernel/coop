@@ -1,5 +1,5 @@
-import React from 'react';
-import { ChevronLeft, Zap, Lock, Clock } from 'lucide-react';
+import React, { useState } from 'react';
+import { ChevronLeft, Zap, Lock, Clock, Check } from 'lucide-react';
 import { CoopLogo } from '../components/CoopLogo';
 import { useWallet } from '../context/WalletContext';
 
@@ -7,10 +7,27 @@ const fmt = (n: number, d = 0) =>
   n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
 export const PriceBoostScreen: React.FC = () => {
-  const { goBack, settings, miningStatus } = useWallet();
+  const { goBack, settings, miningStatus, purchaseBoost } = useWallet();
+  const [busyTier, setBusyTier] = useState<string | null>(null);
+  const [doneTier, setDoneTier] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const tiers = settings?.boostTiers ?? [];
   const currentBoost = miningStatus?.boostPct ?? 0;
+  const purchasesEnabled = settings?.boostPurchasesEnabled ?? false;
+
+  const handleBuy = async (tierId: string) => {
+    setError(null);
+    setBusyTier(tierId);
+    try {
+      await purchaseBoost(tierId);
+      setDoneTier(tierId);
+    } catch (err: any) {
+      setError(err?.message || 'Purchase failed');
+    } finally {
+      setBusyTier(null);
+    }
+  };
 
   return (
     <div className="screen-content" style={{ paddingBottom: 16 }}>
@@ -79,18 +96,34 @@ export const PriceBoostScreen: React.FC = () => {
               </div>
             </div>
 
-            <button
-              className="pill-btn pill-btn-secondary"
-              disabled
-              id={`boost-coming-soon-${tier.id}`}
-              style={{
-                width: '100%', marginTop: 12, opacity: 0.7,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
-              }}
-            >
-              <Lock size={14} />
-              COMING SOON
-            </button>
+            {purchasesEnabled ? (
+              <button
+                className="pill-btn pill-btn-primary"
+                disabled={busyTier !== null || doneTier === tier.id}
+                onClick={() => handleBuy(tier.id)}
+                id={`boost-buy-${tier.id}`}
+                style={{
+                  width: '100%', marginTop: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+                }}
+              >
+                {doneTier === tier.id ? <Check size={14} /> : <Zap size={14} />}
+                {doneTier === tier.id ? 'Boost Active' : busyTier === tier.id ? 'Processing...' : 'Buy with USDT'}
+              </button>
+            ) : (
+              <button
+                className="pill-btn pill-btn-secondary"
+                disabled
+                id={`boost-coming-soon-${tier.id}`}
+                style={{
+                  width: '100%', marginTop: 12, opacity: 0.7,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+                }}
+              >
+                <Lock size={14} />
+                COMING SOON
+              </button>
+            )}
           </div>
         ))}
       </div>

@@ -553,39 +553,64 @@ function renderMining() {
   });
 }
 
-/* ---------- BOOSTS ---------- */
+/* ---------- BOOSTS ----------
+   Boost packages (optional speed boosts — NOT a separate token system).
+   Exact pricing mandated by the project. All four stay "Coming Soon" until an
+   admin turns on boost_purchases_enabled in Settings.                         */
 function renderBoosts() {
   var el = $( 'body-boosts');
   el.innerHTML = '<div class="tag">Loading</div>';
   rpc( 'rpc_admin_boosts', { p_admin_key: null }).then(function (res) {
     var tiers = res.tiers || [];
     var gs = res.grants_stats || { active: 0, expired: 0 };
+    var enabled = !!res.purchases_enabled;
     var h = '<div class="stat-grid">';
     h += stat( 'Active boost grants', gs.active, 'green');
     h += stat( 'Expired grants', gs.expired, 'amber');
-    h += stat( 'Purchases enabled', res.purchases_enabled ? 'Yes' : 'No', res.purchases_enabled ? 'green' : 'red');
+    h += stat( 'Purchases', enabled ? 'Enabled' : 'Coming Soon', enabled ? 'green' : 'red');
     h += '</div>';
-    h += '<div class="card"><div class="card-title">Boost packages</div>';
+
+    // Boost packages — exact 4-column table: Boost | Price | Mining boost | Duration
+    h += '<div class="card"><div class="card-title">' + (enabled ? 'Boost packages (active)' : 'Boost packages — Coming Soon') + '</div>';
+    h += '<div class="hint" style="margin-bottom:12px">Optional boosts let users mine faster for 7 days. They do not create new tokens — they only lift mining speed. Payments are ' + (enabled ? 'enabled' : 'not enabled yet — all four packages remain Coming Soon') + '.</div>';
     if (!tiers.length) h += '<div class="tag">No tiers configured</div>';
     else {
-      h += '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Price (USD)</th><th>Boost %</th></tr></thead><tbody>';
+      h += '<div class="table-wrap"><table><thead><tr><th>Boost</th><th style="text-align:right">Price</th><th style="text-align:right">Mining boost</th><th style="text-align:right">Duration</th></tr></thead><tbody>';
       tiers.forEach(function (t) {
-        h += '<tr><td>' + esc(t.name || t.id) + '</td><td>$' + fmtNum(t.priceUsd, 2) + '</td><td>' + (t.boostPct || 0) + '%</td></tr>';
+        var name = esc(t.name || t.id);
+        var price = '$' + fmtNum(t.priceUsd, 2) + ' USDT';
+        var boost = '+' + fmtNum(t.boostPct, 0) + '%';
+        var duration = fmtNum(t.durationDays || 7, 0) + ' days';
+        var coming = !enabled
+          ? ' <span class="pill gray">Coming Soon</span>'
+          : '';
+        h += '<tr><td>' + name + coming + '</td><td style="text-align:right">' + price + '</td><td style="text-align:right">' + boost + '</td><td style="text-align:right">' + duration + '</td></tr>';
       });
       h += '</tbody></table></div>';
     }
     h += '</div>';
-    h += '<div class="card"><div class="card-title">Active / expired grants</div><div class="table-wrap"><table><thead><tr><th>User</th><th>Tier</th><th>Boost</th><th>Expires</th></tr></thead><tbody>';
-    if (!(res.grants || []).length) h += '<tr><td colspan="4">No boost grants</td></tr>';
+
+    // Active / expired grants
+    h += '<div class="card"><div class="card-title">Active / expired grants</div><div class="table-wrap"><table><thead><tr><th>User</th><th>Tier</th><th>Mining boost</th><th>Duration</th><th>Expires</th></tr></thead><tbody>';
+    if (!(res.grants || []).length) h += '<tr><td colspan="5">No boost grants</td></tr>';
     else (res.grants || []).forEach(function (b) {
       var active = new Date(b.expires_at) > new Date();
-      h += '<tr><td class="mono">' + shortAddr(b.address) + '</td><td>' + esc(b.tier_id) + '</td><td>' + (b.boost_pct || 0) + '%</td><td>' + (active ? '<span class="pill green">active</span> ' : '<span class="pill amber">expired</span> ') + fmtDate(b.expires_at) + '</td></tr>';
+      var starts = b.starts_at ? new Date(b.starts_at) : null;
+      var expires = b.expires_at ? new Date(b.expires_at) : null;
+      var duration = (starts && expires)
+        ? (Math.round((expires.getTime() - starts.getTime()) / 86400000) || 0) + ' days'
+        : '';
+      h += '<tr><td class="mono">' + shortAddr(b.address) + '</td><td>' + esc(b.tier_id) + '</td><td style="text-align:right">' + (b.boost_pct || 0) + '%</td><td style="text-align:right">' + duration + '</td><td>' + (active ? '<span class="pill green">active</span> ' : '<span class="pill amber">expired</span> ') + fmtDate(b.expires_at) + '</td></tr>';
     });
     h += '</tbody></table></div></div>';
-    h += '<div class="card"><div class="card-title">Purchase records</div><div class="table-wrap"><table><thead><tr><th>User</th><th>Tier</th><th>USD</th><th>Bonus</th><th>Status</th><th>Date</th></tr></thead><tbody>';
-    if (!(res.purchases || []).length) h += '<tr><td colspan="6">No purchases yet (payments are Pending/Coming soon until integrated)</td></tr>';
+
+    // Purchase records
+    h += '<div class="card"><div class="card-title">Purchase records</div><div class="table-wrap"><table><thead><tr><th>User</th><th>Tier</th><th>Price</th><th>Mining boost</th><th>Status</th><th>Date</th></tr></thead><tbody>';
+    if (!(res.purchases || []).length) h += '<tr><td colspan="6">No purchases yet — payments are ' + (enabled ? 'enabled but none made yet' : 'Coming Soon until enabled in Settings') + '</td></tr>';
     else (res.purchases || []).forEach(function (p) {
-      h += '<tr><td class="mono">' + shortAddr(p.address) + '</td><td>' + esc(p.tier_name) + '</td><td>$' + fmtNum(p.cost_usd, 2) + '</td><td>' + fmtNum(p.bonus_reward, 2) + '</td><td>' + pill(p.status) + '</td><td style="font-size:11px">' + fmtDate(p.created_at) + '</td></tr>';
+      var tier = tiers.find(function (t) { return t.id === p.tier_name || t.id === p.tier_name.toLowerCase(); }) || {};
+      var boost = (tier.boostPct || p.boost_pct || 0) + '%';
+      h += '<tr><td class="mono">' + shortAddr(p.address) + '</td><td>' + esc(p.tier_name) + '</td><td>$' + fmtNum(p.cost_usd, 2) + ' USDT</td><td style="text-align:right">+' + boost + '</td><td>' + pill(p.status) + '</td><td style="font-size:11px">' + fmtDate(p.created_at) + '</td></tr>';
     });
     h += '</tbody></table></div></div>';
     el.innerHTML = h;

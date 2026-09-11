@@ -19,8 +19,8 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
 export const DEFAULT_BOOST_TIERS: BoostTier[] = [
   { id: 'starter', name: 'Starter', priceUsd: 1.00, boostPct: 25, durationDays: 7 },
   { id: 'plus', name: 'Plus', priceUsd: 2.50, boostPct: 50, durationDays: 7 },
-  { id: 'pro', name: 'Pro', priceUsd: 3.00, boostPct: 75, durationDays: 7 },
-  { id: 'max', name: 'Max', priceUsd: 3.50, boostPct: 100, durationDays: 7 }
+  { id: 'pro', name: 'Pro', priceUsd: 4.00, boostPct: 75, durationDays: 7 },
+  { id: 'max', name: 'Max', priceUsd: 5.50, boostPct: 100, durationDays: 7 }
 ];
 
 class DatabaseService {
@@ -162,6 +162,24 @@ class DatabaseService {
     return {
       wallet: this.walletFromDb(data.wallet, wallet.privateKey),
       reward: Number(data.reward)
+    };
+  }
+
+  // --- 3b. BOOSTS (server-gated by admin_settings.boost_purchases_enabled) ---
+  async purchaseBoost(
+    walletId: string,
+    tierId: string
+  ): Promise<{ tier: string; boostPct: number; expiresAt: string }> {
+    const sb = this.assertSupabase();
+    const { data, error } = await sb.rpc('rpc_purchase_boost', {
+      p_wallet_id: walletId,
+      p_tier_id: tierId
+    });
+    if (error) throw new Error(error.message);
+    return {
+      tier: String(data?.tier ?? tierId),
+      boostPct: Number(data?.boost_pct ?? 0),
+      expiresAt: String(data?.expires_at ?? '')
     };
   }
 

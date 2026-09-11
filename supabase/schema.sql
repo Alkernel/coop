@@ -46,8 +46,8 @@ create table if not exists public.admin_settings (
   boost_tiers jsonb not null default '[
     {"id":"starter","name":"Starter","priceUsd":1.00,"boostPct":25,"durationDays":7},
     {"id":"plus","name":"Plus","priceUsd":2.50,"boostPct":50,"durationDays":7},
-    {"id":"pro","name":"Pro","priceUsd":3.00,"boostPct":75,"durationDays":7},
-    {"id":"max","name":"Max","priceUsd":3.50,"boostPct":100,"durationDays":7}
+    {"id":"pro","name":"Pro","priceUsd":4.00,"boostPct":75,"durationDays":7},
+    {"id":"max","name":"Max","priceUsd":5.50,"boostPct":100,"durationDays":7}
   ]'::jsonb,
   admin_key_hash text not null default '',
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null

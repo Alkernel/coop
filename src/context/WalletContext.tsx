@@ -290,9 +290,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return { fee: res.fee };
   };
 
-  // --- Boosts (USDT purchase is NOT live — Coming Soon) ---
-  const purchaseBoost = async (_tierId: string): Promise<boolean> => {
-    throw new Error('COMING SOON');
+  // --- Boosts (server-gated: purchases live only when admin enables them) ---
+  const purchaseBoost = async (tierId: string): Promise<boolean> => {
+    if (!account) throw new Error('No active wallet');
+    if (!settings?.boostPurchasesEnabled) {
+      throw new Error('Boost purchases are coming soon. Payments are not enabled yet.');
+    }
+    const res = await dbService.purchaseBoost(account.id, tierId);
+    await refreshMiningStatus(account.id);
+    addNotification('Boost Activated', `${res.tier} boost (+${res.boostPct}% mining speed) active for 7 days.`, 'success');
+    return true;
   };
 
   // --- Task Handlers ---
