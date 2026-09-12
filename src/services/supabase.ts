@@ -44,7 +44,7 @@ class DatabaseService {
       cooptokenBalance: Number(row.cooptoken_balance),
       totalSent: Number(row.total_sent ?? 0),
       totalReceived: Number(row.total_received ?? 0),
-      pinCode: row.pin_code || '123456',
+      pinCode: row.pin_code || '',
       biometricsEnabled: row.biometrics_enabled ?? true,
       notificationsEnabled: row.notifications_enabled ?? true,
       autoLockMinutes: row.auto_lock_minutes ?? 5,

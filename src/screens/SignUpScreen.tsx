@@ -131,9 +131,16 @@ Store this file offline on a secure drive.
     setFormError('');
     setLoading(true);
     try {
-      await confirmAccountCreation(generatedKey);
+      // confirmAccountCreation swallows its internal errors and returns a boolean,
+      // so we MUST inspect that result here (an unhandled resolve used to leave
+      // loading stuck on "Creating Account..." forever after a failed RPC).
+      const ok = await confirmAccountCreation(generatedKey);
+      if (!ok) {
+        setFormError('Account creation did not complete. Check your connection and try again.');
+      }
     } catch (err: any) {
       setFormError(err.message || 'Error creating account');
+    } finally {
       setLoading(false);
     }
   };

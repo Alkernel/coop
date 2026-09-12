@@ -210,7 +210,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       localStorage.setItem('coop_private_key', key.toLowerCase());
       navigateTo('home');
       addNotification('Account Created', 'Your COOP Wallet account is ready. Start mining to earn Coopoints!', 'success');
-      await refreshAccountData(acc);
+      // Refresh in the background — has its own try/catch. Do NOT block the
+      // creation RPC response on it; otherwise a slow/hanging mining-status
+      // call would leave the user stuck on "Creating Account..." forever.
+      void refreshAccountData(acc);
       return true;
     } catch (e: any) {
       console.error('Account creation failed:', e.message);

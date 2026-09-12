@@ -19,7 +19,7 @@ create table if not exists public.wallets (
   cooptoken_balance numeric(20, 4) not null default 0.0000,   -- Coopoints (internal reward points)
   total_sent numeric(20, 4) not null default 0.0000,
   total_received numeric(20, 4) not null default 0.0000,
-  pin_code text default '123456',
+  pin_code text not null default '',
   biometrics_enabled boolean default true,
   notifications_enabled boolean default true,
   auto_lock_minutes integer default 5,
