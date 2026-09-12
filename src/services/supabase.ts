@@ -5,8 +5,10 @@ import {
   AppSettings, BoostTier, SwapDirection
 } from '../types';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Env vars take precedence (for local .env.local or future Vercel config).
+// Hardcoded fallbacks keep the free-plan Vercel deploy working without setup.
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://xkmnodecehgpnssdctvk.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable__Ddgj3Yzj7CHXWeBZFQ36g_XOW2sIAL';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
