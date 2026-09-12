@@ -29,7 +29,7 @@ export const HelpSupportScreen: React.FC = () => {
     },
     {
       q: 'How do Price Boost upgrades work?',
-      a: 'Boost upgrades instantly increase your mining output per session. For instance, a $1 boost adds +100 tokens, and $2.50 adds +300 tokens to every session.'
+      a: 'Boosts are optional speed upgrades that make you mine faster for 7 days. For example, Starter ($1 USDT) adds +25% mining speed, Plus ($2.50 USDT) adds +50%, Pro ($4 USDT) adds +75%, and Max ($5.50 USDT) adds +100%. USDT purchases stay Coming Soon until enabled.'
     }
   ];
 
