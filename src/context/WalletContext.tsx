@@ -36,7 +36,7 @@ interface WalletContextType {
   // Auth
   loginWithPrivateKey: (key: string) => Promise<boolean>;
   generateNewAccount: () => { key: string };
-  confirmAccountCreation: (key: string) => Promise<boolean>;
+  confirmAccountCreation: (key: string) => Promise<void>;
   logout: () => void;
   lockWallet: () => void;
   unlockWallet: (credential?: string) => boolean;
@@ -202,23 +202,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return { key };
   };
 
-  const confirmAccountCreation = async (key: string): Promise<boolean> => {
-    try {
-      const acc = await dbService.authenticate(key, true);
-      setAccount(acc);
-      setIsLocked(false);
-      localStorage.setItem('coop_private_key', key.toLowerCase());
-      navigateTo('home');
-      addNotification('Account Created', 'Your COOP Wallet account is ready. Start mining to earn Coopoints!', 'success');
-      // Refresh in the background — has its own try/catch. Do NOT block the
-      // creation RPC response on it; otherwise a slow/hanging mining-status
-      // call would leave the user stuck on "Creating Account..." forever.
-      void refreshAccountData(acc);
-      return true;
-    } catch (e: any) {
-      console.error('Account creation failed:', e.message);
-      return false;
-    }
+  const confirmAccountCreation = async (key: string): Promise<void> => {
+    const acc = await dbService.authenticate(key, true);
+    setAccount(acc);
+    setIsLocked(false);
+    localStorage.setItem('coop_private_key', key.toLowerCase());
+    navigateTo('home');
+    addNotification('Account Created', 'Your COOP Wallet account is ready. Start mining to earn Coopoints!', 'success');
+    // Refresh in the background — has its own try/catch. Do NOT block the
+    // creation RPC response on it; otherwise a slow/hanging mining-status
+    // call would leave the user stuck on "Creating Account..." forever.
+    void refreshAccountData(acc);
   };
 
   const logout = () => {
