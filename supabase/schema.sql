@@ -223,6 +223,16 @@ create table if not exists public.swap_requests (
 );
 
 -- ----------------------------------------------------------
+-- 5b. TRANSFER REQUESTS (anti-replay for internal COOPCoin sends)
+-- ----------------------------------------------------------
+create table if not exists public.transfer_requests (
+  wallet_id uuid references public.wallets(id) on delete cascade not null,
+  client_nonce text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  primary key (wallet_id, client_nonce)
+);
+
+-- ----------------------------------------------------------
 -- 6. TRANSACTIONS
 -- ----------------------------------------------------------
 create table if not exists public.transactions (
@@ -235,7 +245,7 @@ create table if not exists public.transactions (
   direction text,
   counterparty text,
   fee numeric(20, 4) default 0.0000,
-  status text not null default 'Complete' check (status in ('Complete', 'Pending', 'Failed')),
+  status text not null default 'Completed' check (status in ('Complete', 'Completed', 'Pending', 'Failed')),
   tx_hash text not null,
   notes text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -300,6 +310,7 @@ alter table public.user_tasks enable row level security;
 alter table public.transactions enable row level security;
 alter table public.swap_requests enable row level security;
 alter table public.key_generation_log enable row level security;
+alter table public.transfer_requests enable row level security;
 
 drop policy if exists "Allow all on wallets for demo" on public.wallets;
 drop policy if exists "Allow all on mining_sessions" on public.mining_sessions;
@@ -825,73 +836,119 @@ end;
 $$;
 
 
--- H. Send COOP (server-side, atomic, internal transfers credited)
+-- H. Send COOPCoin (server-side, atomic, internal transfer — NO network fee).
+--    Replaces the old 3-parameter version. The client (supabase.ts) calls this
+--    with 4 params including a client nonce for idempotency.
+--    - No network fee (internal ledger move; blockchain fees come later).
+--    - Validates amount, recipient existence, self-send, balance (row lock).
+--    - Idempotency nonce prevents duplicate submissions / double spending.
+--    - BOTH users get a ledger row in the SAME transaction:
+--        sender   'send'    -amount COOPCoin (counterparty = recipient address)
+--        recipient 'receive' +amount COOPCoin (counterparty = sender address)
+--    - Statuses use Completed (never fake success).
 create or replace function public.rpc_execute_send(
   p_wallet_id uuid,
   p_recipient text,
-  p_amount numeric
+  p_amount numeric,
+  p_client_nonce text default null
 )
 returns jsonb
 language plpgsql
 security definer
 as $$
 declare
+  v_amount numeric(20, 4);
+  v_recipient_addr text;
   v_wallet public.wallets%rowtype;
   v_recipient_wallet public.wallets%rowtype;
-  v_fee numeric(20, 4) := 0.0200;
-  v_total_deduct numeric(20, 4);
   v_tx_hash text;
 begin
-  if p_amount <= 0 then
-    raise exception 'Send amount must be greater than zero';
+  if p_amount is null or p_amount <= 0 then
+    raise exception 'Amount must be greater than zero';
+  end if;
+  v_amount := round(p_amount, 4);
+  if v_amount <= 0 then
+    raise exception 'Amount must be greater than zero';
   end if;
 
-  v_total_deduct := p_amount + v_fee;
+  if p_recipient is null or length(trim(p_recipient)) < 10 then
+    raise exception 'Recipient address is invalid';
+  end if;
+  v_recipient_addr := trim(p_recipient);
 
+  if p_client_nonce is null or length(p_client_nonce) < 8 then
+    raise exception 'Invalid request';
+  end if;
+
+  -- Lock sender row first (serializes concurrent sends -> no double spend).
   select * into v_wallet from public.wallets where id = p_wallet_id for update;
   if not found then
-    raise exception 'Sender wallet not found';
+    raise exception 'Wallet not found';
   end if;
 
-  if v_wallet.coop_balance < v_total_deduct then
-    raise exception 'Insufficient COOP balance (including 0.02 network fee)';
+  if lower(v_wallet.address) = lower(v_recipient_addr) then
+    raise exception 'You cannot send COOPCoin to yourself';
+  end if;
+
+  -- Recipient MUST exist and is locked before any balance moves.
+  select * into v_recipient_wallet
+  from public.wallets where lower(address) = lower(v_recipient_addr) for update;
+  if not found then
+    raise exception 'Recipient not found. Check the COOP wallet address and try again.';
+  end if;
+
+  -- Idempotency: same (sender, nonce) can never execute twice.
+  begin
+    insert into public.transfer_requests (wallet_id, client_nonce)
+    values (p_wallet_id, p_client_nonce);
+  exception when unique_violation then
+    raise exception 'Duplicate transfer rejected';
+  end;
+
+  if v_wallet.coop_balance < v_amount then
+    raise exception 'Insufficient COOPCoin balance';
   end if;
 
   update public.wallets
-  set coop_balance = coop_balance - v_total_deduct,
-      total_sent = total_sent + p_amount
+  set coop_balance = coop_balance - v_amount,
+      total_sent = total_sent + v_amount,
+      last_active_at = now()
   where id = p_wallet_id
-    and coop_balance >= v_total_deduct
   returning * into v_wallet;
-  if not found then
-    raise exception 'Insufficient COOP balance';
-  end if;
 
-  v_tx_hash := '0x' || md5(random()::text || clock_timestamp()::text);
+  update public.wallets
+  set coop_balance = coop_balance + v_amount,
+      total_received = total_received + v_amount,
+      last_active_at = now()
+  where id = v_recipient_wallet.id
+  returning * into v_recipient_wallet;
+
+  v_tx_hash := '0x' || md5(random()::text || clock_timestamp()::text || p_wallet_id::text);
 
   insert into public.transactions (
     wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
   ) values (
-    p_wallet_id, 'send', p_amount, 'COOP', p_recipient, v_fee, 'Complete', v_tx_hash,
-    'Sent ' || p_amount::text || ' COOP to ' || p_recipient
+    p_wallet_id, 'send', v_amount, 'COOP', v_recipient_wallet.address, 0, 'Completed', v_tx_hash,
+    'Sent ' || v_amount::text || ' COOPCoin to ' || v_recipient_wallet.address
+      || ' (internal transfer, no blockchain hash yet)'
   );
 
-  select * into v_recipient_wallet from public.wallets where address = p_recipient for update;
-  if found then
-    update public.wallets
-    set coop_balance = coop_balance + p_amount,
-        total_received = total_received + p_amount
-    where id = v_recipient_wallet.id;
+  insert into public.transactions (
+    wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
+  ) values (
+    v_recipient_wallet.id, 'receive', v_amount, 'COOP', v_wallet.address, 0, 'Completed', v_tx_hash,
+    'Received ' || v_amount::text || ' COOPCoin from ' || v_wallet.address
+      || ' (internal transfer, no blockchain hash yet)'
+  );
 
-    insert into public.transactions (
-      wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
-    ) values (
-      v_recipient_wallet.id, 'receive', p_amount, 'COOP', v_wallet.address, 0, 'Complete', v_tx_hash,
-      'Received ' || p_amount::text || ' COOP from ' || v_wallet.address
-    );
-  end if;
-
-  return jsonb_build_object('wallet', to_jsonb(v_wallet), 'tx_hash', v_tx_hash);
+  return jsonb_build_object(
+    'wallet', to_jsonb(v_wallet),
+    'recipient_address', v_recipient_wallet.address,
+    'amount', v_amount,
+    'fee', 0,
+    'status', 'Completed',
+    'tx_hash', v_tx_hash
+  );
 end;
 $$;
 
@@ -952,7 +1009,7 @@ grant execute on function public.rpc_stop_mining(uuid) to anon, authenticated;
 grant execute on function public.rpc_execute_swap(uuid, text, numeric, text) to anon, authenticated;
 grant execute on function public.rpc_get_settings() to anon, authenticated;
 grant execute on function public.rpc_admin_set_settings(text, jsonb) to anon, authenticated;
-grant execute on function public.rpc_execute_send(uuid, text, numeric) to anon, authenticated;
+grant execute on function public.rpc_execute_send(uuid, text, numeric, text) to anon, authenticated;
 grant execute on function public.rpc_claim_task_reward(uuid, text) to anon, authenticated;
 grant execute on function public.rpc_verify_admin_key(text) to anon, authenticated;
 grant execute on function public.rpc_set_admin_key(text) to anon, authenticated;

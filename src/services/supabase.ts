@@ -209,22 +209,41 @@ class DatabaseService {
     };
   }
 
-  // --- 5. SEND COOP (server-side) ---
+  // --- 5. SEND COOPCoin (server-side atomic internal transfer) ---
+  // Internal ledger move between registered COOP users. No network fee.
+  // The server validates sender/recipient/balance atomically and writes
+  // BOTH ledger rows in one transaction. Idempotency nonce prevents
+  // duplicate submissions / double spending.
   async executeSend(
     wallet: WalletAccount,
     recipient: string,
     amount: number
-  ): Promise<{ wallet: WalletAccount; fee: number }> {
+  ): Promise<{
+    wallet: WalletAccount;
+    fee: number;
+    status: string;
+    txHash: string;
+    recipientAddress: string;
+    amount: number;
+  }> {
     const sb = this.assertSupabase();
+    const nonce = (globalThis.crypto?.randomUUID
+      ? globalThis.crypto.randomUUID()
+      : `${wallet.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
     const { data, error } = await sb.rpc('rpc_execute_send', {
       p_wallet_id: wallet.id,
       p_recipient: recipient,
-      p_amount: amount
+      p_amount: amount,
+      p_client_nonce: nonce
     });
     if (error) throw new Error(error.message);
     return {
       wallet: this.walletFromDb(data.wallet, wallet.privateKey),
-      fee: 0.02
+      fee: Number(data.fee ?? 0),
+      status: String(data.status ?? 'Completed'),
+      txHash: String(data.tx_hash ?? ''),
+      recipientAddress: String(data.recipient_address ?? recipient),
+      amount: Number(data.amount ?? amount)
     };
   }
 
@@ -242,9 +261,10 @@ class DatabaseService {
   }
 
   // --- 7. TASKS (server catalog + server-side claim) ---
+  // Admin enable/disable is respected: disabled tasks never reach the wallet.
   async getTasks(walletId: string): Promise<TaskItem[]> {
     const sb = this.assertSupabase();
-    const { data: catalog, error } = await sb.from('tasks').select('*');
+    const { data: catalog, error } = await sb.from('tasks').select('*').eq('enabled', true);
     if (error) throw new Error(error.message);
     const { data: userTasks } = await sb
       .from('user_tasks')

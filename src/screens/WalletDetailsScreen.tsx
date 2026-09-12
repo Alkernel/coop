@@ -8,13 +8,14 @@ export const WalletDetailsScreen: React.FC = () => {
   const { goBack, account, navigateTo } = useWallet();
   const [copied, setCopied] = useState(false);
 
-  const address = account?.address || '0x7a3f81e...9c2e';
+  const address = account?.address || '';
   const coopBalance = account?.coopBalance || 0;
   const cooptokenBalance = account?.cooptokenBalance || 0;
   const totalSent = account?.totalSent || 0;
   const totalReceived = account?.totalReceived || 0;
 
   const handleCopy = () => {
+    if (!address) return;
     navigator.clipboard.writeText(address);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -44,13 +45,10 @@ export const WalletDetailsScreen: React.FC = () => {
         </div>
 
         <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
-          COOP Balance
+          COOPCoin Balance
         </span>
         <div style={{ fontSize: 32, fontWeight: 900, letterSpacing: '-0.5px', margin: '4px 0' }}>
-          {coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} COOP
-        </div>
-        <div style={{ fontSize: 14, color: 'var(--text-secondary)', fontWeight: 500 }}>
-          ≈ ${(coopBalance * 0.199).toFixed(2)} USD
+          {coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} COOPCoin
         </div>
       </div>
 
@@ -86,7 +84,7 @@ export const WalletDetailsScreen: React.FC = () => {
           wordBreak: 'break-all',
           color: 'var(--text-primary)'
         }}>
-          {address}
+          {address || 'No wallet loaded.'}
         </div>
       </div>
 
@@ -94,10 +92,10 @@ export const WalletDetailsScreen: React.FC = () => {
       <div className="bubble-card" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
-            Pre-TGE Mining Balance
+            Mining Balance (COOP Token)
           </div>
           <div style={{ fontSize: 17, fontWeight: 800, marginTop: 2 }}>
-            {cooptokenBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} Cooptoken
+            {cooptokenBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} COOP Token
           </div>
         </div>
         <button

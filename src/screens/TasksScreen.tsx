@@ -88,8 +88,13 @@ export const TasksScreen: React.FC = () => {
         ))}
       </div>
 
-      {/* Tasks List */}
+      {/* Tasks List (real Supabase catalog only — proper empty state, no fake rows) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {filtered.length === 0 && (
+          <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', padding: '40px 0', fontSize: 14 }}>
+            No tasks available right now. Check back soon.
+          </div>
+        )}
         {filtered.map(task => {
           const isReadyToClaim = pendingGo[task.id] && task.status !== 'claimed';
           const isClaimed = task.status === 'claimed';
@@ -126,7 +131,7 @@ export const TasksScreen: React.FC = () => {
                     {task.title}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--accent-green)', fontWeight: 600, marginTop: 2 }}>
-                    +{task.rewardCooptoken} Cooptoken
+                    +{task.rewardCooptoken} COOP Token
                   </div>
                 </div>
               </div>

@@ -12,12 +12,15 @@ export const SecurityScreen: React.FC = () => {
   const [copiedKey, setCopiedKey] = useState(false);
   const [msg, setMsg] = useState('');
 
+  const [pinError, setPinError] = useState('');
+
   const handlePinChange = (e: React.FormEvent) => {
     e.preventDefault();
     if (newPin.length < 4) {
-      alert('PIN must be at least 4 digits');
+      setPinError('PIN must be at least 4 digits');
       return;
     }
+    setPinError('');
     updateAccountSettings({ pinCode: newPin });
     setShowPinModal(false);
     setNewPin('');
@@ -27,10 +30,12 @@ export const SecurityScreen: React.FC = () => {
 
   const handleRevealKey = (e: React.FormEvent) => {
     e.preventDefault();
-    if (pinInputForKey === (account?.pinCode || '123456')) {
+    // No hardcoded fallback PIN: an unset PIN must be created first.
+    if (account?.pinCode && pinInputForKey === account.pinCode) {
       setKeyRevealed(true);
+      setPinError('');
     } else {
-      alert('Incorrect PIN');
+      setPinError('Incorrect PIN');
     }
   };
 
@@ -223,6 +228,11 @@ export const SecurityScreen: React.FC = () => {
           <div className="drawer-sheet" onClick={e => e.stopPropagation()}>
             <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 14, textAlign: 'center' }}>Set New Security PIN</h3>
             <form onSubmit={handlePinChange}>
+              {pinError && (
+                <div style={{ padding: '10px 14px', borderRadius: 12, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', fontSize: 13, marginBottom: 12 }}>
+                  {pinError}
+                </div>
+              )}
               <input
                 type="password"
                 maxLength={6}
@@ -257,6 +267,11 @@ export const SecurityScreen: React.FC = () => {
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, textAlign: 'center' }}>
                   Enter your wallet PIN to reveal your private key.
                 </p>
+                {pinError && (
+                  <div style={{ padding: '10px 14px', borderRadius: 12, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', fontSize: 13, marginBottom: 12 }}>
+                    {pinError}
+                  </div>
+                )}
                 <input
                   type="password"
                   maxLength={6}

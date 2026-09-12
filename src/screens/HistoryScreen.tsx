@@ -72,7 +72,10 @@ export const HistoryScreen: React.FC = () => {
           filtered.map(tx => {
             const isIncoming = tx.txType === 'receive' || tx.txType === 'mining' || tx.txType === 'task' || tx.txType === 'boost';
             const isSwap = tx.txType === 'swap';
-            const pointsToCoop = tx.direction === 'points_to_coop';
+            const pointsToCoop = tx.direction !== 'coop_to_points';
+            const isAdminCredit = tx.txType === 'admin' && tx.amount >= 0;
+            // Legacy rows use 'Complete'; new rows use 'Completed'. Both mean done.
+            const statusLabel = tx.status === 'Complete' ? 'Completed' : tx.status;
             return (
               <div
                 key={tx.id}
@@ -103,11 +106,12 @@ export const HistoryScreen: React.FC = () => {
                     {tx.txType === 'mining' && <Zap size={18} />}
                     {tx.txType === 'task' && <CheckCircle2 size={18} />}
                     {tx.txType === 'boost' && <Zap size={18} />}
+                    {tx.txType === 'admin' && <CheckCircle2 size={18} />}
                   </div>
 
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, textTransform: 'capitalize' }}>
-                      {isSwap ? (pointsToCoop ? 'Swap' : 'Reverse Swap') : tx.txType}
+                      {isSwap ? 'Swap' : tx.txType === 'send' ? 'COOPCoin Sent' : tx.txType === 'receive' ? 'COOPCoin Received' : tx.txType}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                       {formatDate(tx.timestamp)}
@@ -122,27 +126,27 @@ export const HistoryScreen: React.FC = () => {
                   {isSwap && tx.pointsAmount != null ? (
                     <>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        -{tx.pointsAmount.toLocaleString()} {pointsToCoop ? 'Coopoints' : 'COOP'}
+                        -{tx.pointsAmount.toLocaleString()} COOP Token
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-green)' }}>
-                        +{pointsToCoop ? tx.amount.toLocaleString() : (tx.pointsAmount).toLocaleString()} {pointsToCoop ? 'COOP' : 'Coopoints'}
+                        +{tx.amount.toLocaleString()} COOPCoin
                       </div>
                     </>
                   ) : (
                     <div style={{
                       fontSize: 14,
                       fontWeight: 700,
-                      color: isIncoming ? 'var(--accent-green)' : 'var(--text-primary)'
+                      color: isIncoming || isAdminCredit ? 'var(--accent-green)' : 'var(--text-primary)'
                     }}>
-                      {isIncoming ? '+' : '-'}{tx.amount.toFixed(2)} {tx.currency}
+                      {isIncoming || isAdminCredit ? '+' : '-'}{tx.amount.toFixed(2)} {tx.currency === 'COOP' ? 'COOPCoin' : tx.currency === 'Coopoints' ? 'COOP Token' : tx.currency}
                     </div>
                   )}
                   <div style={{
                     fontSize: 11,
-                    color: tx.status === 'Complete' ? 'var(--accent-green)' : 'var(--text-tertiary)',
+                    color: statusLabel === 'Completed' ? 'var(--accent-green)' : 'var(--text-tertiary)',
                     fontWeight: 500
                   }}>
-                    {tx.status}
+                    {statusLabel}
                   </div>
                 </div>
               </div>

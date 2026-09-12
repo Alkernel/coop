@@ -34,8 +34,12 @@
     .btn-sm{padding:7px 12px;font-size:12px;border-radius:9px}
     .btn-green{background:var(--accent-green);color:#06110a}
     .btn-danger{background:var(--accent-red);color:#fff}
+    .btn-danger-solid{background:var(--accent-red);color:#fff;box-shadow:0 0 0 2px rgba(239,68,68,.4);font-weight:700}
     .btn-row{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
     .msg{padding:10px 14px;border-radius:12px;font-size:13px;margin-top:16px;display:none;align-items:center;gap:8px}
+    .toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,16px);background:#fff;color:#0a0a0a;border-radius:14px;padding:12px 18px;font-size:13px;font-weight:700;box-shadow:0 12px 32px rgba(0,0,0,.45);opacity:0;transition:opacity .3s,transform .3s;z-index:9999;max-width:min(92vw,420px);text-align:center}
+    .toast.show{opacity:1;transform:translate(-50%,0)}
+    .toast-err{background:#ef4444;color:#fff}
     .msg-error{background:var(--accent-red-bg);color:var(--accent-red)}
     .msg-success{background:var(--accent-green-bg);color:var(--accent-green)}
     .hint{font-size:12px;color:var(--text-tertiary);line-height:1.5}
@@ -142,6 +146,7 @@
         <a data-page="tasks" onclick="showSection('tasks')">Tasks</a>
         <div class="navgroup">System</div>
         <a data-page="settings" onclick="showSection('settings')">Settings</a>
+        <a data-page="audit" onclick="showSection('audit')">Audit Logs</a>
         <a data-page="security" onclick="showSection('security')">Admin Security</a>
       </nav>
     </aside>
@@ -160,6 +165,7 @@
       <section class="section" id="sec-boosts"><div id="body-boosts"></div></section>
       <section class="section" id="sec-tasks"><div id="body-tasks"></div></section>
       <section class="section" id="sec-settings"><div id="body-settings"></div></section>
+      <section class="section" id="sec-audit"><div id="body-audit"></div></section>
       <section class="section" id="sec-security"><div id="body-security"></div></section>
     </main>
   </div>
@@ -198,12 +204,24 @@ function shortAddr(a) {
   a = String(a);
   return a.length > 16 ? a.slice(0, 8) + '' + a.slice(-6) : a;
 }
+function toast(msg, isErr) {
+  var t = document.createElement('div');
+  t.className = 'toast' + (isErr ? ' toast-err' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(function () { t.classList.add('show'); });
+  setTimeout(function () {
+    t.classList.remove('show');
+    setTimeout(function () { t.remove(); }, 350);
+  }, 3200);
+}
 function showMsg(id, txt, isErr) {
   var o = $(id);
-  if (!o) return;
+  if (!o) { toast(txt, isErr); return; }
   o.className = 'msg ' + (isErr ? 'msg-error' : 'msg-success');
   o.textContent = txt;
   o.style.display = 'flex';
+  toast(txt, isErr);
 }
 function hideMsg(id) { var o = $(id); if (o) o.style.display = 'none'; }
 function getClient() {
@@ -244,6 +262,7 @@ const PAGE_META = {
   boosts: ['Miner Boosts', 'Boost packages, active/expired grants and purchases'],
   tasks: ['Tasks', 'Task catalog + who completed each task + rewards distributed. Changes reach the wallet instantly'],
   settings: ['Settings', 'Global economic configuration - the same values the wallet reads'],
+  audit: ['Audit Logs', 'Every audited admin balance adjustment - admin, wallet, amount, reason, timestamp'],
   security: ['Admin Security', 'Who can access this panel and how login is verified (no secrets shown)']
 };
 function showSection(name) {
@@ -317,6 +336,7 @@ const loaders = {
   boosts: renderBoosts,
   tasks: renderTasks,
   settings: renderSettings,
+  audit: renderAudit,
   security: renderSecurity
 };
 function stat(k, v, color) {
@@ -627,7 +647,7 @@ function renderTasks() {
     h += '<div class="table-wrap"><table><thead><tr><th>ID</th><th>Title</th><th>Category</th><th>Reward</th><th>Claims</th><th>Distributed</th><th></th></tr></thead><tbody>';
     if (!(res.rows || []).length) h += '<tr><td colspan="7">No tasks</td></tr>';
     else (res.rows || []).forEach(function (t) {
-      h += '<tr><td class="mono">' + esc(t.id) + '</td><td>' + esc(t.title) + '</td><td>' + esc(t.category) + '</td><td>' + fmtNum(t.reward_cooptoken, 2) + ' Cooptoken</td><td>' + (t.claims || 0) + '</td><td>' + fmtNum(t.distributed, 2) + '</td><td><button class="btn btn-secondary btn-sm" onclick="taskForm(\'' + t.id + '\')">Edit</button> <button class="btn btn-danger btn-sm" onclick="deleteTask(\'' + t.id + '\')">Del</button></td></tr>';
+      h += '<tr><td class="mono">' + esc(t.id) + '</td><td>' + esc(t.title) + '</td><td>' + esc(t.category) + '</td><td>' + fmtNum(t.reward_cooptoken, 2) + ' Cooptoken</td><td>' + (t.claims || 0) + '</td><td>' + fmtNum(t.distributed, 2) + '</td><td><button class="btn btn-secondary btn-sm" onclick="taskForm(\'' + t.id + '\')">Edit</button> <button id="del-' + esc(t.id) + '" class="btn btn-danger btn-sm" onclick="deleteTask(\'' + t.id + '\')">Del</button></td></tr>';
     });
     h += '</tbody></table></div>';
     el.innerHTML = h;
@@ -647,9 +667,10 @@ function taskForm(id) {
   el.innerHTML += '<div class="field"><label>Icon</label><input id="task-icon" placeholder="check" value="check"/></div>';
   el.innerHTML += '<button class="btn btn-green" onclick="saveTask(\'' + esc(id || '') + '\')">Save task</button>';
 }
-async function saveTask() {
+async function saveTask(editId) {
+  var idVal = editId || $( 'task-id').value.trim();
   var payload = {
-    p_id: $( 'task-id').value.trim(),
+    p_id: idVal,
     p_title: $( 'task-title').value.trim(),
     p_description: $( 'task-desc').value.trim(),
     p_category: $( 'task-cat').value,
@@ -657,19 +678,40 @@ async function saveTask() {
     p_action_url: $( 'task-url').value.trim(),
     p_icon: $( 'task-icon').value.trim()
   };
-  if (!payload.p_id || !payload.p_title) { alert('ID and title are required'); return; }
+  if (!payload.p_id || !payload.p_title) { toast('ID and title are required', true); return; }
   try {
     await rpc( 'rpc_admin_upsert_task', Object.assign({ p_admin_key: null }, payload));
-    $( 'body-tasks').innerHTML = '<div class="msg msg-success" style="display:flex">Task saved. It now appears in the wallet.</div>';
+    $( 'body-tasks').innerHTML = '<div class="msg msg-success" style="display:flex">✓ Task published — it is now available in the wallet.</div>';
+    toast('✓ Task published', false);
     setTimeout(renderTasks, 1200);
-  } catch (err) { alert('Save failed: ' + (err.message || '')); }
+  } catch (err) { toast('✕ Unable to save changes: ' + (err.message || ''), true); }
 }
+// Two-step in-app delete (no browser confirm). First click arms the button;
+// a second click within 4s actually deletes. Matches the "in-app, not native
+// dialogs" requirement and prevents accidental destructive actions.
 async function deleteTask(id) {
-  if (!confirm('Delete task ' + id + '? Users can no longer claim it.')) return;
+  var btn = document.getElementById('del-' + id);
+  if (!btn || btn.getAttribute('data-armed') !== '1') {
+    if (btn) {
+      btn.setAttribute('data-armed', '1');
+      btn.textContent = 'Sure?';
+      btn.classList.add('btn-danger-solid');
+      setTimeout(function () {
+        var b = document.getElementById('del-' + id);
+        if (b && b.getAttribute('data-armed') === '1') {
+          b.removeAttribute('data-armed');
+          b.textContent = 'Del';
+          b.classList.remove('btn-danger-solid');
+        }
+      }, 4000);
+    }
+    return;
+  }
   try {
     await rpc( 'rpc_admin_delete_task', { p_admin_key: null, p_id: id });
+    toast('✓ Task deleted', false);
     renderTasks();
-  } catch (err) { alert('Delete failed: ' + (err.message || '')); }
+  } catch (err) { toast('✕ Delete failed: ' + (err.message || ''), true); }
 }
 /* ---------- SETTINGS ---------- */
 function renderSettings() {
@@ -726,13 +768,32 @@ async function saveSettings() {
     boosts_stackable: toggleVal( 'boosts-stackable')
   };
   try { updates.boost_tiers = JSON.parse($( 'boost-tiers').value); }
-  catch (e) { alert( 'boost-tiers JSON is invalid'); return; }
+  catch (e) { toast('✕ boost-tiers JSON is invalid', true); return; }
+  toast('Saving changes…', false);
   try {
     await rpc( 'rpc_admin_set_settings', { p_admin_key: usingKey ? latestKey : null, p_updates: updates });
-    showMsg( 'settings-msg', 'Settings saved. The wallet now reads the new values.', false);
+    showMsg( 'settings-msg', '✓ Changes committed — the wallet now reads the new values.', false);
   } catch (err) {
-    showMsg( 'settings-msg', 'Save failed: ' + (err.message || ''), true);
+    showMsg( 'settings-msg', '✕ Unable to save changes: ' + (err.message || ''), true);
   }
+}
+/* ---------- AUDIT LOG ---------- */
+function renderAudit() {
+  var el = $('body-audit');
+  el.innerHTML = '<div class="tag">Loading</div>';
+  rpc('rpc_admin_audit', { p_admin_key: null, p_limit: 50, p_offset: 0 }).then(function (res) {
+    var h = '<div class="card"><div class="card-title">Admin audit log (' + (res.total || 0) + ')</div>';
+    h += '<div class="hint" style="margin-bottom:12px">Immutable record of admin balance adjustments: admin, wallet, action, amount, reason, timestamp.</div>';
+    h += '<div class="table-wrap"><table><thead><tr><th>Admin</th><th>Wallet</th><th>Action</th><th>Asset</th><th>Amount</th><th>Reason</th><th>Date</th></tr></thead><tbody>';
+    if (!(res.rows || []).length) h += '<tr><td colspan="7">No admin actions recorded yet</td></tr>';
+    else (res.rows || []).forEach(function (a) {
+      h += '<tr><td>' + esc(a.admin_email || 'admin') + '</td><td class="mono">' + shortAddr(a.address || a.wallet_id) + '</td><td>' + esc(a.action) + '</td><td>' + esc(a.currency) + '</td><td style="text-align:right">' + fmtNum(a.delta, 2) + '</td><td>' + esc(a.reason || '') + '</td><td style="font-size:11px">' + fmtDate(a.created_at) + '</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+    el.innerHTML = h;
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + ' <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="renderAudit()">Retry</button></div>';
+  });
 }
 /* ---------- SECURITY ---------- */
 function renderSecurity() {
@@ -759,7 +820,7 @@ function renderSecurity() {
 }
 async function rotateAdminKey() {
   var key = $( 'new-admin-key').value.trim();
-  if (!key) { alert('Enter a new key'); return; }
+  if (!key) { toast('Enter a new key', true); return; }
   try {
     var buf = new TextEncoder().encode(key);
     var digest = await crypto.subtle.digest('SHA-256', buf);

@@ -95,14 +95,16 @@ export interface TaskItem {
 
 export interface Transaction {
   id: string;
-  txType: 'send' | 'receive' | 'swap' | 'mining' | 'boost' | 'task';
-  amount: number;             // COOP leg for swaps
+  // 'admin' = audited admin balance adjustment (visible in user history).
+  txType: 'send' | 'receive' | 'swap' | 'mining' | 'boost' | 'task' | 'admin';
+  amount: number;             // COOPCoin leg for swaps
   currency: Currency;
-  pointsAmount?: number;      // Coopoints leg for swaps
+  pointsAmount?: number;      // COOP Token leg for swaps
   direction?: SwapDirection;
   counterparty?: string;
   fee?: number;
-  status: 'Complete' | 'Pending' | 'Failed';
+  // Legacy rows use 'Complete'; new rows use 'Completed'/'Pending'/'Failed'.
+  status: 'Complete' | 'Completed' | 'Pending' | 'Failed';
   txHash: string;
   notes?: string;
   timestamp: number;

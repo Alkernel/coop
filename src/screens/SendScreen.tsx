@@ -1,27 +1,53 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ChevronLeft, QrCode, AlertCircle, Check } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
 import confetti from 'canvas-confetti';
+
+type SendPhase = 'idle' | 'preparing' | 'processing' | 'confirming';
 
 export const SendScreen: React.FC = () => {
   const { goBack, account, executeSend } = useWallet();
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [showReview, setShowReview] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState<SendPhase>('idle');
+  // Real result only (never fake success): set after Supabase confirms.
+  const [receipt, setReceipt] = useState<{
+    amount: number;
+    recipient: string;
+    txHash: string;
+    status: string;
+    timestamp: number;
+  } | null>(null);
+  const submittingRef = useRef(false);
 
   const numAmount = parseFloat(amount) || 0;
-  const networkFee = 0.02;
-  const total = numAmount > 0 ? numAmount + networkFee : 0;
+  // Internal user-to-user COOPCoin transfers: no network fee.
+  const total = numAmount > 0 ? numAmount : 0;
   const availableCoop = account?.coopBalance || 0;
+
+  const phaseLabel: Record<SendPhase, string> = {
+    idle: '',
+    preparing: 'Preparing…',
+    processing: 'Processing…',
+    confirming: 'Confirming…'
+  };
 
   const handleReview = () => {
     setError('');
-    setSuccess('');
+    setReceipt(null);
     if (!recipient.trim()) {
-      setError('Please enter a recipient address or username.');
+      setError('Please enter the recipient COOP wallet address.');
+      return;
+    }
+    if (!recipient.trim().startsWith('0x')) {
+      setError('Recipient address looks invalid. Paste the full COOP wallet address.');
+      return;
+    }
+    if (account && recipient.trim().toLowerCase() === account.address.toLowerCase()) {
+      setError('You cannot send COOPCoin to yourself.');
       return;
     }
     if (numAmount <= 0) {
@@ -29,19 +55,34 @@ export const SendScreen: React.FC = () => {
       return;
     }
     if (total > availableCoop) {
-      setError('Insufficient COOP balance (including 0.02 network fee).');
+      setError('Insufficient COOPCoin balance.');
       return;
     }
     setShowReview(true);
   };
 
   const confirmTransfer = async () => {
+    // Guard against double-click / duplicate submissions.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError('');
+    setPhase('preparing');
+    const dest = recipient.trim();
+    const sendAmount = numAmount;
     try {
-      await executeSend(recipient.trim(), numAmount);
+      setPhase('processing');
+      const res = await executeSend(dest, sendAmount);
+      setPhase('confirming');
       setShowReview(false);
-      setSuccess(`Successfully sent ${numAmount} COOP to ${recipient.slice(0, 10)}...!`);
+      setPhase('idle');
+      setReceipt({
+        amount: res.amount,
+        recipient: res.recipientAddress,
+        txHash: res.txHash,
+        status: res.status,
+        timestamp: Date.now()
+      });
       confetti({
         particleCount: 60,
         spread: 60,
@@ -52,8 +93,10 @@ export const SendScreen: React.FC = () => {
     } catch (err: any) {
       setError(err.message || 'Transfer failed');
       setShowReview(false);
+      setPhase('idle');
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -163,13 +206,12 @@ export const SendScreen: React.FC = () => {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              Available: {availableCoop.toLocaleString()} COOP
+              Available: {availableCoop.toLocaleString()} COOPCoin
             </span>
             <button
               type="button"
               onClick={() => {
-                const max = Math.max(0, availableCoop - networkFee);
-                setAmount(max.toFixed(2));
+                setAmount(availableCoop.toFixed(2));
               }}
               style={{
                 background: 'none',
@@ -185,7 +227,7 @@ export const SendScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Fee & Total breakdown */}
+        {/* Internal transfer: no network fee (no blockchain leg yet) */}
         <div style={{
           padding: '14px 16px',
           background: 'var(--bg-glass)',
@@ -198,11 +240,11 @@ export const SendScreen: React.FC = () => {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
             <span style={{ color: 'var(--text-secondary)' }}>Network Fee</span>
-            <span style={{ fontWeight: 600 }}>{networkFee.toFixed(2)} COOP</span>
+            <span style={{ fontWeight: 600 }}>0.00 COOPCoin (internal)</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 700, paddingTop: 4, borderTop: '1px solid var(--border-color)' }}>
             <span>Total</span>
-            <span>{total.toFixed(2)} COOP</span>
+            <span>{total.toFixed(2)} COOPCoin</span>
           </div>
         </div>
 
@@ -223,7 +265,8 @@ export const SendScreen: React.FC = () => {
           </div>
         )}
 
-        {success && (
+        {/* Real transaction result (only after Supabase confirms) */}
+        {receipt && (
           <div style={{
             padding: '10px 14px',
             borderRadius: 12,
@@ -232,11 +275,15 @@ export const SendScreen: React.FC = () => {
             fontSize: 13,
             marginBottom: 16,
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             gap: 8
           }}>
-            <Check size={16} />
-            <span>{success}</span>
+            <Check size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={{ wordBreak: 'break-all' }}>
+              {receipt.status}: sent {receipt.amount.toFixed(2)} COOPCoin to {receipt.recipient}.
+              ID {receipt.txHash} · {new Date(receipt.timestamp).toLocaleString()}.
+              No blockchain hash yet — internal transfer.
+            </span>
           </div>
         )}
       </div>
@@ -256,7 +303,12 @@ export const SendScreen: React.FC = () => {
       {showReview && (
         <div className="drawer-backdrop" onClick={() => setShowReview(false)}>
           <div className="drawer-sheet" onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, textAlign: 'center' }}>Review Transfer</h3>
+            <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8, textAlign: 'center' }}>Review Transfer</h3>
+            {loading && phase !== 'idle' && (
+              <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--accent-green)', marginBottom: 12 }}>
+                {phaseLabel[phase]}
+              </div>
+            )}
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
@@ -267,15 +319,15 @@ export const SendScreen: React.FC = () => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Amount:</span>
-                <span style={{ fontWeight: 700 }}>{numAmount.toFixed(2)} COOP</span>
+                <span style={{ fontWeight: 700 }}>{numAmount.toFixed(2)} COOPCoin</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Network Fee:</span>
-                <span style={{ fontWeight: 600 }}>{networkFee} COOP</span>
+                <span style={{ fontWeight: 600 }}>0.00 (internal)</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, paddingTop: 8, borderTop: '1px solid var(--border-color)' }}>
                 <span>Total Deduct:</span>
-                <span>{total.toFixed(2)} COOP</span>
+                <span>{total.toFixed(2)} COOPCoin</span>
               </div>
             </div>
 
@@ -294,7 +346,7 @@ export const SendScreen: React.FC = () => {
                 style={{ flex: 1 }}
                 id="btn-confirm-send"
               >
-                {loading ? 'Sending...' : 'Confirm'}
+                {loading ? (phase !== 'idle' ? phaseLabel[phase] : 'Sending...') : 'Confirm'}
               </button>
             </div>
           </div>

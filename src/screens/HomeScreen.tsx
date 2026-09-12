@@ -16,10 +16,9 @@ export const HomeScreen: React.FC = () => {
 
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // Approximate USD values
-  const coopPrice = 0.199;
+  // Balances are real Supabase values. No invented USD price: USD is only
+  // estimated while explicitly labeled, using no hardcoded market price.
   const coopBalance = account?.coopBalance || 0;
-  const totalUsd = (coopBalance * coopPrice).toFixed(2);
   const cooptokenBalance = account?.cooptokenBalance || 0;
 
   // Real values from the backend mining status
@@ -29,9 +28,8 @@ export const HomeScreen: React.FC = () => {
   const dailyHours = miningStatus?.dailyHours ?? 12;
   const miningPowerPct = Math.min(100, Math.round((hoursToday / dailyHours) * 100));
 
-  // Today's mining earnings (server-side value)
+  // Today's mining earnings (server-side value, COOP Token units)
   const rewardTotal = miningStatus?.pointsEarnedToday ?? 0;
-  const rewardUsd = (rewardTotal * (coopPrice / 10)).toFixed(2); // estimated projection
 
   return (
     <div className="screen-content" style={{ paddingBottom: 16 }}>
@@ -67,14 +65,14 @@ export const HomeScreen: React.FC = () => {
 
       {/* Total Balance Card */}
       <div className="bubble-card bubble-card-elevated" style={{ background: 'var(--bg-surface)' }}>
-        <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>Total Balance</span>
+        <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>COOPCoin Balance</span>
         <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.5px', margin: '6px 0 10px 0' }}>
-          $ {totalUsd}
+          {coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COOPCoin
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, color: 'var(--text-secondary)', fontWeight: 500 }}>
-            <span>= {coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COOP</span>
+            <span>{coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COOPCoin</span>
             <span className="badge-tag badge-green">
               ▲ +{boostPct}%
             </span>
@@ -88,7 +86,7 @@ export const HomeScreen: React.FC = () => {
             borderRadius: 8,
             border: '1px solid var(--border-color)'
           }}>
-            {cooptokenBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} Cooptoken (Mining)
+            {cooptokenBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} COOP Token (Mining)
           </div>
         </div>
       </div>
@@ -149,26 +147,23 @@ export const HomeScreen: React.FC = () => {
         {[
           {
             coin: 'COOP' as const,
-            name: 'Coopcoin',
-            network: 'Coop Mainnet · BEP-20',
+            name: 'COOPCoin',
+            network: 'Internal ledger · transferable',
             balance: coopBalance,
-            usd: (coopBalance * coopPrice).toFixed(2),
             soon: false
           },
           {
             coin: 'COOPTOKEN' as const,
-            name: 'Cooptoken',
-            network: 'Mining Points · Swaps 1,000 → 1 COOP',
+            name: 'COOP Token',
+            network: 'Mining rewards · swaps to COOPCoin',
             balance: cooptokenBalance,
-            usd: (cooptokenBalance * coopPrice / 1000).toFixed(2),
             soon: false
           },
           {
             coin: 'USDT' as const,
             name: 'USDT',
             network: 'BEP-20 · Buy Boost & Miners',
-            balance: 0,
-            usd: '0.00',
+            balance: null as number | null,
             soon: true
           }
         ].map(asset => (
@@ -192,9 +187,13 @@ export const HomeScreen: React.FC = () => {
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 14, fontWeight: 700 }}>
-                {asset.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {asset.balance == null
+                  ? '—'
+                  : asset.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ ${asset.usd}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                {asset.balance == null ? 'Not tracked on-chain yet' : asset.coin === 'USDT' ? 'BEP-20' : asset.name}
+              </div>
             </div>
           </div>
         ))}
@@ -251,15 +250,12 @@ export const HomeScreen: React.FC = () => {
               Today's Earnings
             </div>
             <div style={{ fontSize: 17, fontWeight: 800 }}>
-              +{rewardTotal.toFixed(2)} Coopoints
+              +{rewardTotal.toFixed(2)} COOP Token
             </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>
-            ≈ ${rewardUsd}
-          </span>
           <ChevronRight size={16} color="var(--text-tertiary)" />
         </div>
       </div>

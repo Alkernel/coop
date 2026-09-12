@@ -26,6 +26,7 @@ export const SignUpScreen: React.FC = () => {
   const [confirmedSaved, setConfirmedSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [formError, setFormError] = useState('');
 
   // Persist a freshly generated key so it survives a refresh.
   const persistKey = (key: string) => {
@@ -124,14 +125,15 @@ Store this file offline on a secure drive.
 
   const handleCreateAccount = async () => {
     if (!confirmedSaved) {
-      alert('Please check the confirmation box to verify you have backed up your private key.');
+      setFormError('Please check the confirmation box to verify you have backed up your private key.');
       return;
     }
+    setFormError('');
     setLoading(true);
     try {
       await confirmAccountCreation(generatedKey);
     } catch (err: any) {
-      alert(err.message || 'Error creating account');
+      setFormError(err.message || 'Error creating account');
       setLoading(false);
     }
   };
@@ -276,6 +278,11 @@ Store this file offline on a secure drive.
         </label>
 
         {/* Create Account Button */}
+        {formError && (
+          <div style={{ padding: '10px 14px', borderRadius: 12, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', fontSize: 13, marginBottom: 12 }}>
+            {formError}
+          </div>
+        )}
         <button
           className="pill-btn pill-btn-primary"
           onClick={handleCreateAccount}

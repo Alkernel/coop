@@ -7,9 +7,10 @@ export const ReceiveScreen: React.FC = () => {
   const { goBack, account } = useWallet();
   const [copied, setCopied] = useState(false);
 
-  const address = account?.address || '0x7a3f81e...9c2e';
+  const address = account?.address || '';
 
   const handleCopy = () => {
+    if (!address) return;
     navigator.clipboard.writeText(address);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -47,7 +48,8 @@ export const ReceiveScreen: React.FC = () => {
           padding: '28px 20px',
           textAlign: 'center'
         }}>
-          {/* High contrast QR code frame */}
+          {/* High contrast QR code frame (real wallet address only) */}
+          {address ? (
           <div style={{
             background: '#ffffff',
             padding: 16,
@@ -62,6 +64,11 @@ export const ReceiveScreen: React.FC = () => {
               includeMargin={false}
             />
           </div>
+          ) : (
+            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 20 }}>
+              No wallet loaded.
+            </div>
+          )}
 
           <span style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
             Your COOP Wallet Address
@@ -80,7 +87,7 @@ export const ReceiveScreen: React.FC = () => {
             maxWidth: '100%',
             marginBottom: 16
           }}>
-            {address}
+            {address || 'No wallet loaded.'}
           </div>
 
           {/* Actions */}
@@ -119,12 +126,12 @@ export const ReceiveScreen: React.FC = () => {
           color: 'var(--text-secondary)'
         }}>
           <Info size={16} color="var(--accent-blue)" style={{ flexShrink: 0 }} />
-          <span>Only send COOP mainnet and Cooptoken pre-TGE assets to this address.</span>
+          <span>Only send COOPCoin and COOP Token (internal COOP transfers) to this address. No blockchain deposits yet.</span>
         </div>
       </div>
 
       <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, paddingBottom: 12 }}>
-        Network: COOP Decentralized Ledger
+        Network: COOP internal ledger (no blockchain hash yet)
       </div>
     </div>
   );

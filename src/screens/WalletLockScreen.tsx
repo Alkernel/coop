@@ -24,7 +24,8 @@ export const WalletLockScreen: React.FC = () => {
       const nextPin = pin + num;
       setPin(nextPin);
       if (nextPin.length === 6) {
-        if (nextPin === (account?.pinCode || '123456')) {
+        // No hardcoded fallback PIN: unlock only when a real PIN is set.
+        if (account?.pinCode && nextPin === account.pinCode) {
           unlockWallet(nextPin);
         } else {
           setError(true);
@@ -210,7 +211,7 @@ export const WalletLockScreen: React.FC = () => {
               gap: 6
             }}
           >
-            <KeyRound size={14} /> Enter PIN (Default: 123456)
+            <KeyRound size={14} /> Enter PIN
           </button>
         </div>
       )}

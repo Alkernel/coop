@@ -44,8 +44,8 @@ interface WalletContextType {
   // Actions
   startMining: () => Promise<void>;
   stopMining: () => Promise<number>;
-  executeSwap: (direction: SwapDirection, amount: number) => Promise<{ points: number; coop: number }>;
-  executeSend: (recipient: string, amount: number) => Promise<{ fee: number }>;
+  executeSwap: (direction: SwapDirection, amount: number) => Promise<{ points: number; coop: number; txHash: string }>;
+  executeSend: (recipient: string, amount: number) => Promise<{ fee: number; status: string; txHash: string; recipientAddress: string; amount: number }>;
   purchaseBoost: (tierId: string) => Promise<boolean>;
   claimTask: (taskId: string) => Promise<number>;
   updateAccountSettings: (updates: Partial<WalletAccount>) => void;
@@ -267,27 +267,27 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // --- Swap Handlers (validated & executed server-side) ---
-  const executeSwap = async (direction: SwapDirection, amount: number): Promise<{ points: number; coop: number }> => {
+  const executeSwap = async (direction: SwapDirection, amount: number): Promise<{ points: number; coop: number; txHash: string }> => {
     if (!account) throw new Error('No active wallet');
     const res = await dbService.executeSwap(account, direction, amount);
     setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
     setTransactions(await dbService.getTransactions(account.id));
     if (direction === 'points_to_coop') {
-      addNotification('Swap Completed', `Converted ${res.points} Coopoints into ${res.coop} COOP.`, 'tx');
+      addNotification('Swap Completed', `Converted ${res.points} COOP Token into ${res.coop} COOPCoin.`, 'tx');
     } else {
-      addNotification('Reverse Swap Completed', `Converted ${res.coop} COOP into ${res.points} Coopoints.`, 'tx');
+      addNotification('Reverse Swap Completed', `Converted ${res.coop} COOPCoin into ${res.points} COOP Token.`, 'tx');
     }
-    return { points: res.points, coop: res.coop };
+    return { points: res.points, coop: res.coop, txHash: res.txHash };
   };
 
   // --- Send Handlers ---
-  const executeSend = async (recipient: string, amount: number): Promise<{ fee: number }> => {
+  const executeSend = async (recipient: string, amount: number): Promise<{ fee: number; status: string; txHash: string; recipientAddress: string; amount: number }> => {
     if (!account) throw new Error('No active wallet');
     const res = await dbService.executeSend(account, recipient, amount);
     setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
     setTransactions(await dbService.getTransactions(account.id));
-    addNotification('Transfer Sent', `Sent ${amount} COOP to ${recipient.slice(0, 8)}...`, 'tx');
-    return { fee: res.fee };
+    addNotification('Transfer Sent', `Sent ${res.amount} COOPCoin to ${res.recipientAddress.slice(0, 8)}...`, 'tx');
+    return { fee: res.fee, status: res.status, txHash: res.txHash, recipientAddress: res.recipientAddress, amount: res.amount };
   };
 
   // --- Boosts (server-gated: purchases live only when admin enables them) ---
