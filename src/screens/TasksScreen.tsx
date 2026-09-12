@@ -131,7 +131,7 @@ export const TasksScreen: React.FC = () => {
                     {task.title}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--accent-green)', fontWeight: 600, marginTop: 2 }}>
-                    +{task.rewardCooptoken} COOP Token
+                    +{task.rewardCooptoken} Cooptoken
                   </div>
                 </div>
               </div>

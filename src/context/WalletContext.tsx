@@ -208,7 +208,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setIsLocked(false);
     localStorage.setItem('coop_private_key', key.toLowerCase());
     navigateTo('home');
-    addNotification('Account Created', 'Your COOP Wallet account is ready. Start mining to earn Coopoints!', 'success');
+    addNotification('Account Created', 'Your COOP Wallet account is ready. Start mining to earn Cooptoken!', 'success');
     // Refresh in the background — has its own try/catch. Do NOT block the
     // creation RPC response on it; otherwise a slow/hanging mining-status
     // call would leave the user stuck on "Creating Account..." forever.
@@ -246,7 +246,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       const session = await dbService.startMining(account.id);
       setMiningStatus(prev => prev ? { ...prev, session } : prev);
-      addNotification('Mining Started', `Mining at ${session.baseRate} Coopoints/hour (+${session.boostPct}% boost).`, 'mining');
+      addNotification('Mining Started', `Mining at ${session.baseRate} Cooptoken/hour (+${session.boostPct}% boost).`, 'mining');
     } catch (e: any) {
       addNotification('Mining Error', e.message || 'Could not start mining', 'info');
       throw e;
@@ -259,7 +259,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
     await refreshMiningStatus(account.id);
     setTransactions(await dbService.getTransactions(account.id));
-    addNotification('Mining Claimed', `+${res.reward} Coopoints credited to your balance.`, 'success');
+    addNotification('Mining Claimed', `+${res.reward} Cooptoken credited to your balance.`, 'success');
     return res.reward;
   };
 
@@ -270,9 +270,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
     setTransactions(await dbService.getTransactions(account.id));
     if (direction === 'points_to_coop') {
-      addNotification('Swap Completed', `Converted ${res.points} COOP Token into ${res.coop} COOPCoin.`, 'tx');
+      addNotification('Swap Completed', `Converted ${res.points} Cooptoken into ${res.coop} COOP.`, 'tx');
     } else {
-      addNotification('Reverse Swap Completed', `Converted ${res.coop} COOPCoin into ${res.points} COOP Token.`, 'tx');
+      addNotification('Reverse Swap Completed', `Converted ${res.coop} COOP into ${res.points} Cooptoken.`, 'tx');
     }
     return { points: res.points, coop: res.coop, txHash: res.txHash };
   };
@@ -306,7 +306,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
     setTasks(await dbService.getTasks(account.id));
     setTransactions(await dbService.getTransactions(account.id));
-    addNotification('Task Completed', `Earned +${res.reward} Coopoints!`, 'success');
+    addNotification('Task Completed', `Earned +${res.reward} Cooptoken!`, 'success');
     return res.reward;
   };
 

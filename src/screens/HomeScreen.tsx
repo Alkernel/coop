@@ -15,6 +15,7 @@ export const HomeScreen: React.FC = () => {
   } = useWallet();
 
   const [showNotifications, setShowNotifications] = useState(false);
+  const [activeAsset, setActiveAsset] = useState<'COOP' | 'COOPTOKEN' | null>(null);
 
   // Balances are real Supabase values. No invented USD price: USD is only
   // estimated while explicitly labeled, using no hardcoded market price.
@@ -65,14 +66,14 @@ export const HomeScreen: React.FC = () => {
 
       {/* Total Balance Card */}
       <div className="bubble-card bubble-card-elevated" style={{ background: 'var(--bg-surface)' }}>
-        <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>COOPCoin Balance</span>
+        <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>COOP Balance</span>
         <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.5px', margin: '6px 0 10px 0' }}>
-          {coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COOPCoin
+          {coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COOP
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, color: 'var(--text-secondary)', fontWeight: 500 }}>
-            <span>{coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COOPCoin</span>
+            <span>{coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COOP</span>
             <span className="badge-tag badge-green">
               ▲ +{boostPct}%
             </span>
@@ -86,7 +87,7 @@ export const HomeScreen: React.FC = () => {
             borderRadius: 8,
             border: '1px solid var(--border-color)'
           }}>
-            {cooptokenBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} COOP Token (Mining)
+            {cooptokenBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} Coopoint (Mining)
           </div>
         </div>
       </div>
@@ -147,27 +148,49 @@ export const HomeScreen: React.FC = () => {
         {[
           {
             coin: 'COOP' as const,
-            name: 'COOPCoin',
+            name: 'Coopcoin',
+            symbol: 'COOP',
             network: 'Internal ledger · transferable',
             balance: coopBalance,
-            soon: false
+            soon: false,
+            canSend: true,
+            canReceive: true,
+            canSwap: true
           },
           {
             coin: 'COOPTOKEN' as const,
-            name: 'COOP Token',
-            network: 'Mining rewards · swaps to COOPCoin',
+            name: 'Coopoint',
+            symbol: 'Cooptoken',
+            network: 'Mining rewards · swap to Coopcoin',
             balance: cooptokenBalance,
-            soon: false
+            soon: false,
+            canSend: false,
+            canReceive: false,
+            canSwap: true
           },
           {
             coin: 'USDT' as const,
             name: 'USDT',
+            symbol: 'USDT',
             network: 'BEP-20 · Buy Boost & Miners',
             balance: null as number | null,
-            soon: true
+            soon: true,
+            canSend: false,
+            canReceive: false,
+            canSwap: false
           }
         ].map(asset => (
-          <div key={asset.coin} className="bubble-card" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div
+            key={asset.coin}
+            className="bubble-card"
+            onClick={() => asset.soon ? undefined : setActiveAsset(asset.coin as 'COOP' | 'COOPTOKEN')}
+            style={{
+              padding: '12px 14px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              cursor: asset.soon ? 'default' : 'pointer',
+              opacity: asset.soon ? 0.7 : 1
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <CoinIcon coin={asset.coin} size={38} />
               <div>
@@ -192,7 +215,7 @@ export const HomeScreen: React.FC = () => {
                   : asset.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                {asset.balance == null ? 'Not tracked on-chain yet' : asset.coin === 'USDT' ? 'BEP-20' : asset.name}
+                {asset.balance == null ? 'Not tracked on-chain yet' : asset.symbol}
               </div>
             </div>
           </div>
@@ -250,7 +273,7 @@ export const HomeScreen: React.FC = () => {
               Today's Earnings
             </div>
             <div style={{ fontSize: 17, fontWeight: 800 }}>
-              +{rewardTotal.toFixed(2)} COOP Token
+              +{rewardTotal.toFixed(2)} Coopoint
             </div>
           </div>
         </div>
@@ -259,6 +282,67 @@ export const HomeScreen: React.FC = () => {
           <ChevronRight size={16} color="var(--text-tertiary)" />
         </div>
       </div>
+
+      {/* Asset Detail Popover */}
+      {activeAsset && (
+        <div
+          className="drawer-backdrop"
+          onClick={() => setActiveAsset(null)}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+        >
+          <div
+            className="bubble-card bubble-card-elevated"
+            onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 420, padding: '20px 18px', borderRadius: '20px 20px 0 0', marginBottom: 0 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <CoinIcon coin={activeAsset} size={32} />
+                <span style={{ fontSize: 16, fontWeight: 800 }}>
+                  {activeAsset === 'COOP' ? 'Coopcoin' : 'Coopoint'}
+                </span>
+              </div>
+              <button
+                onClick={() => setActiveAsset(null)}
+                className="header-icon-btn"
+                aria-label="Close"
+              >
+                <span style={{ fontSize: 18, fontWeight: 600, lineHeight: 1 }}>✕</span>
+              </button>
+            </div>
+
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 4 }}>Available Balance</div>
+            <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>
+              {(activeAsset === 'COOP' ? coopBalance : cooptokenBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {' '}{activeAsset === 'COOP' ? 'COOP' : 'Cooptoken'}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {activeAsset === 'COOP' && (
+                <>
+                  <button className="pill-btn pill-btn-primary" onClick={() => { setActiveAsset(null); navigateTo('send'); }} style={{ flex: 1, minWidth: 100 }}>
+                    <ArrowUpRight size={16} /> Send
+                  </button>
+                  <button className="pill-btn pill-btn-primary" onClick={() => { setActiveAsset(null); navigateTo('receive'); }} style={{ flex: 1, minWidth: 100 }}>
+                    <ArrowDownLeft size={16} /> Receive
+                  </button>
+                </>
+              )}
+              <button className="pill-btn pill-btn-secondary" onClick={() => { setActiveAsset(null); navigateTo('swap'); }} style={{ flex: 1, minWidth: 100 }}>
+                <ArrowLeftRight size={16} /> {activeAsset === 'COOP' ? 'To Coopoint' : 'To Coopcoin'}
+              </button>
+              <button className="pill-btn pill-btn-secondary" onClick={() => { setActiveAsset(null); navigateTo('history'); }} style={{ flex: 1, minWidth: 100 }}>
+                <History size={16} /> History
+              </button>
+            </div>
+            {activeAsset === 'COOPTOKEN' && (
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 10, textAlign: 'center' }}>
+                Coopoint is earned through mining — it cannot be sent directly to other users. Swap to Coopcoin to transfer.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Notification Modal Drawer */}
       <NotificationDrawer 

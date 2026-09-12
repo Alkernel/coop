@@ -24,7 +24,7 @@ export const SendScreen: React.FC = () => {
   const submittingRef = useRef(false);
 
   const numAmount = parseFloat(amount) || 0;
-  // Internal user-to-user COOPCoin transfers: no network fee.
+  // Internal user-to-user COOP transfers: no network fee.
   const total = numAmount > 0 ? numAmount : 0;
   const availableCoop = account?.coopBalance || 0;
 
@@ -47,7 +47,7 @@ export const SendScreen: React.FC = () => {
       return;
     }
     if (account && recipient.trim().toLowerCase() === account.address.toLowerCase()) {
-      setError('You cannot send COOPCoin to yourself.');
+      setError('You cannot send COOP to yourself.');
       return;
     }
     if (numAmount <= 0) {
@@ -55,7 +55,7 @@ export const SendScreen: React.FC = () => {
       return;
     }
     if (total > availableCoop) {
-      setError('Insufficient COOPCoin balance.');
+      setError('Insufficient COOP balance.');
       return;
     }
     setShowReview(true);

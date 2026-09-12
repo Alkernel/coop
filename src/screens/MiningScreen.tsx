@@ -91,7 +91,7 @@ export const MiningScreen: React.FC = () => {
             {dailyLimitReached ? 'Daily Limit Reached' : isMiningActive ? 'You are mining!' : 'Mining Paused'}
           </h2>
           <p style={{ fontSize: 14, color: 'var(--text-secondary)', fontWeight: 600 }}>
-            {fmt(effectiveRate, 1)} Coopoints / hour
+            {fmt(effectiveRate, 1)} Cooptoken / hour
             {boostPct > 0 && (
               <span style={{ color: 'var(--accent-green)' }}> (base {fmt(rate)} + boost +{fmt(boostPct)}%)</span>
             )}
@@ -128,7 +128,7 @@ export const MiningScreen: React.FC = () => {
               style={{ background: 'var(--accent-green)', color: '#ffffff' }}
             >
               <CheckCircle2 size={18} />
-              {busy ? 'Stopping...' : `Stop & Claim ≈ ${fmt(unclaimedEstimate)} Coopoints`}
+              {busy ? 'Stopping...' : `Stop & Claim ≈ ${fmt(unclaimedEstimate)} Cooptoken`}
             </button>
           ) : (
             <button className="pill-btn pill-btn-primary" onClick={handleToggle} disabled={busy} id="mining-start-btn">
@@ -155,13 +155,13 @@ export const MiningScreen: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>Today's Earnings</span>
           <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--accent-green)' }}>
-            +{fmt(pointsToday)} Coopoints
+            +{fmt(pointsToday)} Cooptoken
           </span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>Daily Limit</span>
           <span style={{ fontSize: 13, fontWeight: 700 }}>
-            {fmt(status?.dailyLimitPoints ?? dailyHours * rate)} Coopoints
+            {fmt(status?.dailyLimitPoints ?? dailyHours * rate)} Cooptoken
           </span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
@@ -205,10 +205,10 @@ export const MiningScreen: React.FC = () => {
           </div>
           <div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 2 }}>
-              Coopoints Balance
+              Coopoint Balance
             </div>
             <div style={{ fontSize: 17, fontWeight: 800 }}>
-              {fmt(miningStatus?.wallet.cooptokenBalance ?? 0)}
+              {fmt(miningStatus?.wallet.cooptokenBalance ?? 0)} Cooptoken
             </div>
           </div>
         </div>

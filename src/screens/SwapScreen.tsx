@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, Check, AlertCircle, Info } from 'lucide-react';
+import { ChevronLeft, Check, AlertCircle, Info, ArrowLeftRight } from 'lucide-react';
 import { CoinIcon } from '../components/CoinIcon';
 import { useWallet } from '../context/WalletContext';
 import confetti from 'canvas-confetti';
@@ -10,8 +10,8 @@ const fmt = (n: number, d = 2) =>
 
 export const SwapScreen: React.FC = () => {
   const { goBack, account, executeSwap, settings } = useWallet();
-  // Asset rule: COOP Token -> COOPCoin only. No reverse direction.
-  const direction: SwapDirection = 'points_to_coop';
+  // Asset rule: Cooptoken -> COOP (Coopcoin). Bidirectional swap supported.
+  const [direction, setDirection] = useState<SwapDirection>('points_to_coop');
   const [fromAmount, setFromAmount] = useState<string>('1000');
   const [loading, setLoading] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -21,15 +21,30 @@ export const SwapScreen: React.FC = () => {
   // Swap ratio always comes from Supabase admin settings (no hardcoded ratio).
   const pointsPerCoop = settings?.pointsPerCoop ?? 0;
   const settingsLoaded = settings != null && pointsPerCoop > 0;
-  const pointsToCoop = true;
   const pointsBalance = account?.cooptokenBalance || 0;
   const coopBalance = account?.coopBalance || 0;
 
+  const isPointsToCoop = direction === 'points_to_coop';
+  const fromCoin = isPointsToCoop ? 'COOPTOKEN' as const : 'COOP' as const;
+  const toCoin = isPointsToCoop ? 'COOP' as const : 'COOPTOKEN' as const;
+  const fromName = isPointsToCoop ? 'Coopoint' : 'Coopcoin';
+  const toName = isPointsToCoop ? 'Coopcoin' : 'Coopoint';
+  const fromBalance = isPointsToCoop ? pointsBalance : coopBalance;
+  const toBalance = isPointsToCoop ? coopBalance : pointsBalance;
+
   const numAmount = parseFloat(fromAmount) || 0;
-  const pointsLeg = numAmount;
-  const coopLeg = settingsLoaded ? numAmount / pointsPerCoop : 0;
-  const toAmount = settingsLoaded ? coopLeg.toFixed(4) : '—';
-  const insufficient = numAmount > pointsBalance;
+  const toNum = isPointsToCoop
+    ? (settingsLoaded ? numAmount / pointsPerCoop : 0)
+    : (settingsLoaded ? numAmount * pointsPerCoop : 0);
+  const toAmount = settingsLoaded ? toNum.toFixed(isPointsToCoop ? 4 : 0) : '—';
+  const insufficient = numAmount > fromBalance;
+
+  const toggleDirection = () => {
+    setDirection(d => d === 'points_to_coop' ? 'coop_to_points' : 'points_to_coop');
+    setFromAmount('');
+    setError('');
+    setSuccessMsg('');
+  };
 
   const handleSwapClick = () => {
     setError('');
@@ -37,7 +52,7 @@ export const SwapScreen: React.FC = () => {
     if (!settingsLoaded) { setError('Swap rate is loading from the server. Please wait.'); return; }
     if (numAmount <= 0) { setError('Enter an amount to convert.'); return; }
     if (insufficient) {
-      setError('Insufficient COOP Token balance.');
+      setError(`Insufficient ${fromName} balance.`);
       return;
     }
     setShowConfirm(true);
@@ -49,8 +64,11 @@ export const SwapScreen: React.FC = () => {
     try {
       const res = await executeSwap(direction, numAmount);
       setShowConfirm(false);
-      setSuccessMsg(
-        `Converted ${fmt(res.points)} COOP Token into ${res.coop} COOPCoin. ID ${res.txHash}.`);
+      if (isPointsToCoop) {
+        setSuccessMsg(`Converted ${fmt(res.points, 0)} Cooptoken → ${res.coop} COOP. ID ${res.txHash}.`);
+      } else {
+        setSuccessMsg(`Converted ${fmt(res.coop, 0)} COOP → ${res.points} Cooptoken. ID ${res.txHash}.`);
+      }
       confetti({ particleCount: 70, spread: 60, origin: { y: 0.7 } });
       setFromAmount('');
     } catch (err: any) {
@@ -72,21 +90,21 @@ export const SwapScreen: React.FC = () => {
           <div style={{ width: 40 }} />
         </div>
 
-        {/* From Card: COOP Token (mined/task reward asset) */}
+        {/* From Card */}
         <div className="bubble-card bubble-card-elevated" style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>From</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              Balance: {fmt(pointsBalance)} COOP Token
+              Balance: {fmt(fromBalance)} {isPointsToCoop ? 'Cooptoken' : 'COOP'}
             </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <CoinIcon coin={'COOPTOKEN'} size={38} />
+              <CoinIcon coin={fromCoin} size={38} />
               <div>
-                <span style={{ fontWeight: 700, fontSize: 16 }}>COOP Token</span>
+                <span style={{ fontWeight: 700, fontSize: 16 }}>{fromName}</span>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                  Mining Reward Asset
+                  {isPointsToCoop ? 'Mining reward asset' : 'Transferable asset'}
                 </div>
               </div>
             </div>
@@ -103,21 +121,37 @@ export const SwapScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* To Card: COOPCoin (transferable asset) */}
-        <div className="bubble-card bubble-card-elevated">
+        {/* Swap Direction Toggle (center) */}
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '-8px 0', zIndex: 2, position: 'relative' }}>
+          <button
+            onClick={toggleDirection}
+            style={{
+              background: 'var(--bg-glass-active)', border: '1px solid var(--border-color)',
+              borderRadius: '50%', width: 40, height: 40,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', color: 'var(--text-primary)'
+            }}
+            aria-label="Swap direction"
+          >
+            <ArrowLeftRight size={18} />
+          </button>
+        </div>
+
+        {/* To Card */}
+        <div className="bubble-card bubble-card-elevated" style={{ marginTop: -8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>To</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              Balance: {fmt(coopBalance)} COOPCoin
+              Balance: {fmt(toBalance)} {isPointsToCoop ? 'COOP' : 'Cooptoken'}
             </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <CoinIcon coin={'COOP'} size={38} />
+              <CoinIcon coin={toCoin} size={38} />
               <div>
-                <span style={{ fontWeight: 700, fontSize: 16 }}>COOPCoin</span>
+                <span style={{ fontWeight: 700, fontSize: 16 }}>{toName}</span>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                  Transferable Asset
+                  {isPointsToCoop ? 'Transferable asset' : 'Mining reward asset'}
                 </div>
               </div>
             </div>
@@ -131,7 +165,7 @@ export const SwapScreen: React.FC = () => {
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Rate</span>
             <span style={{ fontSize: 13, fontWeight: 700 }}>
               {settingsLoaded
-                ? `${fmt(pointsPerCoop)} COOP Token = 1 COOPCoin`
+                ? `${fmt(pointsPerCoop, 0)} Cooptoken = 1 COOP`
                 : 'Loading rate from server…'}
             </span>
           </div>
@@ -139,15 +173,21 @@ export const SwapScreen: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Estimated</span>
               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-green)' }}>
-                {`${fmt(pointsLeg)} COOP Token → ${toAmount} COOPCoin`}
+                {isPointsToCoop
+                  ? `${fmt(numAmount, 0)} Cooptoken → ${toAmount} COOP`
+                  : `${fmt(numAmount, 0)} COOP → ${toAmount} Cooptoken`}
               </span>
             </div>
           )}
           {settings && (
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Remaining Reward Pool</span>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                {isPointsToCoop ? 'Remaining Reward Pool' : 'Cooptoken Balance Impact'}
+              </span>
               <span style={{ fontSize: 13, fontWeight: 700 }}>
-                {fmt(settings.remainingCoopRewardPool)} COOPCoin
+                {isPointsToCoop
+                  ? `${fmt(settings.remainingCoopRewardPool)} COOP`
+                  : `+${fmt(toNum, 0)} Cooptoken`}
               </span>
             </div>
           )}
@@ -201,20 +241,20 @@ export const SwapScreen: React.FC = () => {
             <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, textAlign: 'center' }}>Confirm Swap</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
               <div style={{ textAlign: 'center', fontSize: 15, fontWeight: 700 }}>
-                You are converting {fmt(numAmount)} COOP Token into{' '}
-                <span style={{ color: 'var(--accent-green)' }}>
-                  {`${toAmount} COOPCoin`}
-                </span>.
+                {isPointsToCoop
+                  ? <>You are converting {fmt(numAmount, 0)} Cooptoken → <span style={{ color: 'var(--accent-green)' }}>{toAmount} COOP</span></>
+                  : <>You are converting {fmt(numAmount, 0)} COOP → <span style={{ color: 'var(--accent-green)' }}>{toAmount} Cooptoken</span></>
+                }
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Exchange Rate:</span>
                 <span style={{ fontWeight: 600 }}>
-                  {settingsLoaded ? `${fmt(pointsPerCoop)} COOP Token = 1 COOPCoin` : 'Loading…'}
+                  {settingsLoaded ? `${fmt(pointsPerCoop, 0)} Cooptoken = 1 COOP` : 'Loading…'}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Network Fee:</span>
-                <span style={{ fontWeight: 600 }}>0.00 COOPCoin</span>
+                <span style={{ fontWeight: 600 }}>0.00 (internal)</span>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 12 }}>

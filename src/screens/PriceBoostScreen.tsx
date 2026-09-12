@@ -55,7 +55,7 @@ export const PriceBoostScreen: React.FC = () => {
           +{fmt(currentBoost)}%
         </div>
         <p style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 260, lineHeight: 1.4 }}>
-          Boosts increase your mining rate, up to {fmt(settings?.dailyMiningHours ?? 12)} mining hours per day. The daily Coopoints limit still applies.
+          Boosts increase your mining rate, up to {fmt(settings?.dailyMiningHours ?? 12)} mining hours per day. The daily Cooptoken limit still applies.
         </p>
       </div>
 

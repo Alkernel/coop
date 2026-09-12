@@ -126,7 +126,7 @@ export const ReceiveScreen: React.FC = () => {
           color: 'var(--text-secondary)'
         }}>
           <Info size={16} color="var(--accent-blue)" style={{ flexShrink: 0 }} />
-          <span>Only send COOPCoin and COOP Token (internal COOP transfers) to this address. No blockchain deposits yet.</span>
+          <span>Only send COOP and Cooptoken (internal COOP transfers) to this address. No blockchain deposits yet.</span>
         </div>
       </div>
 

@@ -45,10 +45,10 @@ export const WalletDetailsScreen: React.FC = () => {
         </div>
 
         <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
-          COOPCoin Balance
+          COOP Balance
         </span>
         <div style={{ fontSize: 32, fontWeight: 900, letterSpacing: '-0.5px', margin: '4px 0' }}>
-          {coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} COOPCoin
+          {coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} COOP
         </div>
       </div>
 
@@ -92,10 +92,10 @@ export const WalletDetailsScreen: React.FC = () => {
       <div className="bubble-card" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
-            Mining Balance (COOP Token)
+            Coopoint Balance (Cooptoken)
           </div>
           <div style={{ fontSize: 17, fontWeight: 800, marginTop: 2 }}>
-            {cooptokenBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} COOP Token
+            {cooptokenBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} Cooptoken
           </div>
         </div>
         <button

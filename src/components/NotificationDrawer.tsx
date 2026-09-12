@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Bell, CheckCircle, ArrowDownLeft, Zap, Sparkles } from 'lucide-react';
+import { X, Bell, CheckCircle, ArrowDownLeft, Zap } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
 
 interface NotificationDrawerProps {
@@ -66,7 +66,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
                   {n.type === 'success' && <CheckCircle size={16} color="var(--accent-green)" />}
                   {n.type === 'mining' && <Zap size={16} color="var(--accent-yellow)" />}
                   {n.type === 'tx' && <ArrowDownLeft size={16} color="var(--accent-blue)" />}
-                  {n.type === 'info' && <Sparkles size={16} color="var(--text-primary)" />}
+                  {n.type === 'info' && <Bell size={16} color="var(--text-secondary)" />}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>

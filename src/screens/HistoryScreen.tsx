@@ -111,7 +111,7 @@ export const HistoryScreen: React.FC = () => {
 
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, textTransform: 'capitalize' }}>
-                      {isSwap ? 'Swap' : tx.txType === 'send' ? 'COOPCoin Sent' : tx.txType === 'receive' ? 'COOPCoin Received' : tx.txType}
+                      {isSwap ? 'Swap' : tx.txType === 'send' ? 'COOP Sent' : tx.txType === 'receive' ? 'COOP Received' : tx.txType}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                       {formatDate(tx.timestamp)}
@@ -126,10 +126,10 @@ export const HistoryScreen: React.FC = () => {
                   {isSwap && tx.pointsAmount != null ? (
                     <>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        -{tx.pointsAmount.toLocaleString()} COOP Token
+                        -{tx.pointsAmount.toLocaleString()} Cooptoken
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-green)' }}>
-                        +{tx.amount.toLocaleString()} COOPCoin
+                        +{tx.amount.toLocaleString()} COOP
                       </div>
                     </>
                   ) : (
@@ -138,7 +138,7 @@ export const HistoryScreen: React.FC = () => {
                       fontWeight: 700,
                       color: isIncoming || isAdminCredit ? 'var(--accent-green)' : 'var(--text-primary)'
                     }}>
-                      {isIncoming || isAdminCredit ? '+' : '-'}{tx.amount.toFixed(2)} {tx.currency === 'COOP' ? 'COOPCoin' : tx.currency === 'Coopoints' ? 'COOP Token' : tx.currency}
+                      {isIncoming || isAdminCredit ? '+' : '-'}{tx.amount.toFixed(2)} {tx.currency === 'COOP' ? 'COOP' : tx.currency === 'Coopoints' ? 'Cooptoken' : tx.currency}
                     </div>
                   )}
                   <div style={{

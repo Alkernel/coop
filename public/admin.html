@@ -431,7 +431,13 @@ async function openUser(id) {
     h += '<div class="kv"><span class="k">Total received</span><span class="v">' + fmtNum(w.total_received, 4) + '</span></div>';
     h += '<div class="kv"><span class="k">Created</span><span class="v">' + fmtDate(w.created_at) + '</span></div>';
     h += '<div class="kv"><span class="k">Last active</span><span class="v">' + fmtDate(w.last_active_at) + '</span></div></div>';
-    h += '<div class="card"><div class="card-title">Mining</div>';
+    h += '<div class="card"><div class="card-title">Adjust Balance</div>';
+    h += '<div class="hint" style="margin-bottom:10px">Increase or decrease a user\'s COOP or Cooptoken balance. Requires a reason (min 3 chars). Audited in the admin log.</div>';
+    h += '<div class="field"><label>Asset</label><select id="adj-currency"><option value="COOP">COOP</option><option value="Cooptoken">Cooptoken</option></select></div>';
+    h += '<div class="field"><label>Amount (negative to decrease)</label><input type="number" step="0.01" id="adj-amount" placeholder="e.g. 100 or -50"/></div>';
+    h += '<div class="field"><label>Reason (required)</label><input type="text" id="adj-reason" placeholder="e.g. Correction for bug #123"/></div>';
+    h += '<button class="btn btn-primary" onclick="adjustBalance(\'' + w.id + '\')">Apply Adjustment</button>';
+    h += '<div id="adj-msg" class="msg" style="margin-top:8px"></div></div>';
     if (d.mining) {
       h += '<div class="kv"><span class="k">Status</span><span class="v">' + pill(d.mining.status) + '</span></div>';
       h += '<div class="kv"><span class="k">Start</span><span class="v">' + fmtDate(d.mining.start_time) + '</span></div>';
@@ -685,6 +691,20 @@ async function saveTask(editId) {
     toast('✓ Task published', false);
     setTimeout(renderTasks, 1200);
   } catch (err) { toast('✕ Unable to save changes: ' + (err.message || ''), true); }
+}
+async function adjustBalance(walletId) {
+  var cur = document.getElementById('adj-currency').value;
+  var amt = parseFloat(document.getElementById('adj-amount').value);
+  var reason = (document.getElementById('adj-reason').value || '').trim();
+  var msgEl = document.getElementById('adj-msg');
+  if (!amt || isNaN(amt)) { showMsg('adj-msg', '✕ Enter a valid non-zero amount', true); return; }
+  if (reason.length < 3) { showMsg('adj-msg', '✕ A reason (min 3 chars) is required', true); return; }
+  showMsg('adj-msg', 'Applying…', false);
+  try {
+    var r = await rpc('rpc_admin_adjust_balance', { p_admin_key: null, p_wallet_id: walletId, p_currency: cur, p_delta: amt, p_reason: reason });
+    showMsg('adj-msg', '✓ Adjustment applied — new balances: COOP ' + fmtNum(r.coop_balance, 4) + ', Cooptoken ' + fmtNum(r.cooptoken_balance, 4), false);
+    openUser(walletId);
+  } catch (err) { showMsg('adj-msg', '✕ Adjustment failed: ' + (err.message || ''), true); }
 }
 // Two-step in-app delete (no browser confirm). First click arms the button;
 // a second click within 4s actually deletes. Matches the "in-app, not native
