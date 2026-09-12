@@ -265,6 +265,21 @@ const PAGE_META = {
   audit: ['Audit Logs', 'Every audited admin balance adjustment - admin, wallet, amount, reason, timestamp'],
   security: ['Admin Security', 'Who can access this panel and how login is verified (no secrets shown)']
 };
+async function adjustBalance(walletId) {
+  var cur = $( 'adj-currency').value;
+  var amt = parseFloat($( 'adj-amount').value);
+  var reason = ($( 'adj-reason') || {}).value || '';
+  showMsg( 'adj-msg', 'Submitting…', false);
+  if (isNaN(amt) || amt === 0) { showMsg( 'adj-msg', 'Amount must be a non-zero number.', true); return; }
+  if (reason.trim().length < 3) { showMsg( 'adj-msg', 'Reason must be at least 3 characters.', true); return; }
+  try {
+    await rpc( 'rpc_admin_adjust_balance', { p_admin_key: usingKey ? latestKey : null, p_wallet_id: walletId, p_currency: cur, p_delta: amt, p_reason: reason.trim() });
+    toast('✓ Balance adjustment committed — recorded in audit log.', false);
+    showMsg( 'adj-msg', '✓ Adjustment committed. Refreshing wallet…', false);
+    setTimeout(() => openUser(walletId), 800);
+  } catch (err) { showMsg( 'adj-msg', '✕ ' + (err.message || 'adjustment failed'), true); }
+}
+
 function showSection(name) {
   _current = name;
   var secs = document.querySelectorAll('.section');
@@ -458,9 +473,16 @@ async function openUser(id) {
     var txs = d.transactions || [];
     if (!txs.length) h += '<tr><td colspan="6">No transactions</td></tr>';
     else txs.forEach(function (t) {
-      h += '<tr><td>' + esc(t.tx_type) + '</td><td>' + esc(t.currency) + '</td><td>' + fmtNum(t.amount, 4) + '</td><td>' + (t.points_amount ? fmtNum(t.points_amount, 2) : '') + '</td><td>' + pill(t.status) + '</td><td style="font-size:11px">' + fmtDate(t.created_at) + '</td></tr>';
+      h += '<tr><td>' + esc(t.tx_type) + '</td><td>' + esc(t.currency) + '</td><td>' + fmtNum(t.amount, 4) + '</td><td>' + (t.points_amount ? fmtNum(t.points_amount, 2) + '</td><td>' + pill(t.status) + '</td><td style="font-size:11px">' + fmtDate(t.created_at) + '</td></tr>';
     });
     h += '</tbody></table></div></div>';
+    h += '<div class="card"><div class="card-title">Adjust Balance</div>';
+    h += '<div class="hint" style="margin-bottom:12px">Increase or decrease this wallet\'s balance. Every adjustment is written to the audit log with your admin identity, the amount, and the reason.</div>';
+    h += '<div class="field"><label>Asset</label><select id="adj-currency"><option value="COOP">COOP</option><option value="Cooptoken">Cooptoken</option></select></div>';
+    h += '<div class="field"><label>Amount (+ to increase, − to decrease)</label><input type="number" step="0.01" id="adj-amount" placeholder="e.g. 100 or -50"/></div>';
+    h += '<div class="field"><label>Reason (min 3 characters)</label><input type="text" id="adj-reason" placeholder="e.g. Promo airdrop"/></div>';
+    h += '<div class="btn-row"><button class="btn" onclick="adjustBalance(\'' + w.id + '\')">Submit Adjustment</button></div>';
+    h += '<div id="adj-msg" class="msg"></div></div>';
     el.innerHTML = h;
   } catch (err) {
     el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
