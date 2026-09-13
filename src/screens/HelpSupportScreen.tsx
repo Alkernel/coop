@@ -490,7 +490,7 @@ export const HelpSupportScreen: React.FC = () => {
                     background: mine ? 'var(--accent-green)' : 'var(--bg-glass-active)',
                     color: mine ? '#ffffff' : 'var(--text-primary)', fontSize: 13, lineHeight: 1.45
                   }}>
-                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</div>
+                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body.replace(/^\[([^\]]+)\]\s*/, '')}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3, fontSize: 10, opacity: 0.8, justifyContent: 'flex-end' }}>
                       <span>{fmtTime(m.createdAt)}</span>
                       {mine && (readByAdmin ? <CheckCheck size={12} /> : <Check size={12} />)}
