@@ -1127,21 +1127,32 @@ var _adminTypingHideTimer = null;
 
 function supportAdminTyping() {
   if (!SUPPORT_TICKET) return;
-  var now = Date.now();
-  if (now - _supportTypingSentAt < 2500) return;
-  _supportTypingSentAt = now;
-  _adminTypingActive = true;
-  rpc( 'rpc_support_typing', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET }).catch(function () {});
-  // Show local "typing..." indicator for the admin.
+  refreshAdminTypingIndicator();
+  sendAdminTypingRpc();
+}
+
+// Shows/hides the local indicator. Runs on EVERY keystroke so it never vanishes
+// between slow keystrokes (the 3s poll can do whatever it wants).
+function refreshAdminTypingIndicator() {
   var ind = $( 'support-admin-typing-indicator');
-  if (ind) ind.style.display = '';
-  // Hide the local indicator 2s after the last keystroke.
+  if (!ind) return;
+  _adminTypingActive = true;
+  ind.style.display = '';
   if (_adminTypingHideTimer) clearTimeout(_adminTypingHideTimer);
   _adminTypingHideTimer = setTimeout(function () {
     _adminTypingActive = false;
-    var _ind = $( 'support-admin-typing-indicator');
-    if (_ind) _ind.style.display = 'none';
+    ind.style.display = 'none';
   }, 2000);
+}
+
+// Sends a debounced typing RPC to the user app (rate-limited 2.5s).
+// Separate from refreshAdminTypingIndicator so local indicator is NOT gated by RPC cooldown.
+function sendAdminTypingRpc() {
+  if (!SUPPORT_TICKET) return;
+  var now = Date.now();
+  if (now - _supportTypingSentAt < 2500) return;
+  _supportTypingSentAt = now;
+  rpc( 'rpc_support_typing', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET }).catch(function () {});
 }
 
 function sendAdminReply() {
