@@ -35,6 +35,8 @@ export interface WalletAccount {
   notificationsEnabled: boolean;
   autoLockMinutes: number;
   createdAt: string;
+  status?: 'active' | 'restricted' | 'suspended' | 'banned';
+  restrictedReason?: string | null;
 }
 
 export interface MiningSession {

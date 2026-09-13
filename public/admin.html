@@ -247,6 +247,14 @@ function pill(status) {
   if (s === 'failed') return '<span class="pill red">' + esc(status) + '</span>';
   return '<span class="pill gray">' + esc(status) + '</span>';
 }
+function statusPill(status) {
+  var s = String(status == null ? 'active' : status).toLowerCase();
+  if (s === 'active') return '<span class="pill green">active</span>';
+  if (s === 'restricted') return '<span class="pill amber">restricted</span>';
+  if (s === 'suspended') return '<span class="pill red">suspended</span>';
+  if (s === 'banned') return '<span class="pill red">banned</span>';
+  return '<span class="pill gray">' + esc(s) + '</span>';
+}
 function txIcon(type) {
   var c = { send: 'var(--accent-amber)', receive: 'var(--accent-green)', swap: 'var(--accent-blue)', mining: 'var(--accent-amber)', boost: 'var(--accent-green)', task: 'var(--accent-blue)' }[type] || 'var(--text-secondary)';
   return '<span class="ic" style="background:' + c + '"></span>';
@@ -421,11 +429,11 @@ async function walletTable(kw, renderer, limit) {
 function renderUsers() { walletTable('users', renderUsersRows, 100); }
 function renderUsersRows(res, search) {
   var h = '<div class="toolbar"><input type="search" id="wallet-search-users" placeholder="Search address / wallet id" value="' + esc(search) + '" onkeydown="if(event.key===\'Enter\')renderUsers()"><button class="btn btn-secondary btn-sm" onclick="renderUsers()">Search</button></div>';
-  h += '<div class="table-wrap"><table><thead><tr><th>Wallet</th><th>COOP</th><th>Coopoint</th><th>Mining</th><th>Txs</th><th>Created</th><th>Last active</th></tr></thead><tbody>';
+  h += '<div class="table-wrap"><table><thead><tr><th>Wallet</th><th>COOP</th><th>Coopoint</th><th>Mining</th><th>Status</th><th>Txs</th><th>Created</th><th>Last active</th></tr></thead><tbody>';
   (res.rows || []).forEach(function(w) {
-    h += '<tr class="clickable" onclick="openUser(\'' + w.id + '\')"><td class="mono">' + shortAddr(w.address) + '</td><td>' + fmtNum(w.coop_balance, 4) + '</td><td>' + fmtNum(w.cooptoken_balance, 4) + '</td><td>' + pill(w.mining_state) + '</td><td>' + (w.tx_count || 0) + '</td><td style="font-size:11px">' + fmtDate(w.created_at) + '</td><td style="font-size:11px">' + fmtDate(w.last_active_at) + '</td></tr>';
+    h += '<tr class="clickable" onclick="openUser(\'' + w.id + '\')"><td class="mono">' + shortAddr(w.address) + '</td><td>' + fmtNum(w.coop_balance, 4) + '</td><td>' + fmtNum(w.cooptoken_balance, 4) + '</td><td>' + pill(w.mining_state) + '</td><td>' + statusPill(w.status) + '</td><td>' + (w.tx_count || 0) + '</td><td style="font-size:11px">' + fmtDate(w.created_at) + '</td><td style="font-size:11px">' + fmtDate(w.last_active_at) + '</td></tr>';
   });
-  if (!(res.rows || []).length) h += '<tr><td colspan="7">No wallets found</td></tr>';
+  if (!(res.rows || []).length) h += '<tr><td colspan="8">No wallets found</td></tr>';
   h += '</tbody></table></div>';
   h += '<div class="tag" style="margin-top:10px">' + (res.total || 0) + ' wallet(s) total</div>';
   $( 'body-users').innerHTML = h;
@@ -437,6 +445,24 @@ async function openUser(id) {
     var d = await rpc( 'rpc_admin_wallet_detail', { p_admin_key: null, p_wallet_id: id });
     var w = d.wallet || {};
     var h = '<div class="toolbar"><button class="btn btn-secondary btn-sm" onclick="renderUsers()">&larr; Back to users</button></div>';
+    var st = (w.status || 'active');
+    h += '<div class="card"><div class="card-title">User Status ' + statusPill(st) + '</div>';
+    if (st !== 'active') {
+      h += '<div class="kv"><span class="k">Reason</span><span class="v">' + esc(w.restricted_reason || 'not recorded') + '</span></div>';
+      h += '<div class="kv"><span class="k">Since</span><span class="v">' + fmtDate(w.restricted_at) + '</span></div>';
+    }
+    if (st === 'restricted') h += '<div class="hint" style="margin-bottom:10px">Restricted users can log in and view, but cannot send, swap, claim tasks or mine. Incoming transfers still land.</div>';
+    if (st === 'suspended') h += '<div class="hint" style="margin-bottom:10px">Suspended users cannot log in at all.</div>';
+    if (st === 'banned') h += '<div class="hint" style="margin-bottom:10px">Banned users are permanently locked out.</div>';
+    h += '<div class="field"><label>Action</label><select id="ust-status">';
+    h += '<option value="active"' + (st === 'active' ? ' selected' : '') + '>Restore — Active (everything allowed)</option>';
+    h += '<option value="restricted"' + (st === 'restricted' ? ' selected' : '') + '>Restrict (view only: no send / swap / mine / claim)</option>';
+    h += '<option value="suspended"' + (st === 'suspended' ? ' selected' : '') + '>Suspend (cannot log in)</option>';
+    h += '<option value="banned"' + (st === 'banned' ? ' selected' : '') + '>Ban (permanent lockout)</option>';
+    h += '</select></div>';
+    h += '<div class="field"><label>Reason (required, min 3 characters)</label><input type="text" id="ust-reason" placeholder="e.g. Violated referral rules"/></div>';
+    h += '<div class="btn-row"><button class="btn" onclick="setUserStatus(\'' + w.id + '\')">Apply Status</button></div>';
+    h += '<div id="ust-msg" class="msg"></div></div>';
     h += '<div class="card"><div class="card-title">Wallet</div>';
     h += '<div class="kv"><span class="k">Wallet ID</span><span class="v mono">' + esc(w.id) + '</span></div>';
     h += '<div class="kv"><span class="k">Address</span><span class="v mono">' + esc(w.address) + '</span></div>';
@@ -473,7 +499,7 @@ async function openUser(id) {
     var txs = d.transactions || [];
     if (!txs.length) h += '<tr><td colspan="6">No transactions</td></tr>';
     else txs.forEach(function (t) {
-      h += '<tr><td>' + esc(t.tx_type) + '</td><td>' + esc(t.currency) + '</td><td>' + fmtNum(t.amount, 4) + '</td><td>' + (t.points_amount ? fmtNum(t.points_amount, 2) + '</td><td>' + pill(t.status) + '</td><td style="font-size:11px">' + fmtDate(t.created_at) + '</td></tr>';
+      h += '<tr><td>' + esc(t.tx_type) + '</td><td>' + esc(t.currency) + '</td><td>' + fmtNum(t.amount, 4) + '</td><td>' + (t.points_amount != null ? fmtNum(t.points_amount, 2) : '—') + '</td><td>' + pill(t.status) + '</td><td style="font-size:11px">' + fmtDate(t.created_at) + '</td></tr>';
     });
     h += '</tbody></table></div></div>';
     h += '<div class="card"><div class="card-title">Adjust Balance</div>';
@@ -488,15 +514,38 @@ async function openUser(id) {
     el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
   }
 }
+async function setUserStatus(id) {
+  var status = $('ust-status') ? $('ust-status').value : '';
+  var reason = $('ust-reason') ? $('ust-reason').value.trim() : '';
+  var msgEl = $('ust-msg');
+  if (!status) return;
+  if (status !== 'active' && reason.length < 3) {
+    msgEl.className = 'msg msg-error'; msgEl.style.display = 'flex';
+    msgEl.textContent = 'A reason of at least 3 characters is required.';
+    return;
+  }
+  if (status === 'banned' && !window.confirm('Permanently BAN this user? They will be locked out and unable to log in.')) return;
+  if (status === 'suspended' && !window.confirm('Suspend this user? They will not be able to log in until restored.')) return;
+  msgEl.className = 'msg'; msgEl.style.display = 'flex'; msgEl.textContent = 'Applying...';
+  try {
+    await rpc('rpc_admin_set_user_status', { p_admin_key: null, p_wallet_id: id, p_status: status, p_reason: reason });
+    toast('✓ Status committed', 'User is now ' + status + '.');
+    setTimeout(function() { openUser(id); }, 400);
+  } catch (err) {
+    msgEl.className = 'msg msg-error'; msgEl.style.display = 'flex';
+    msgEl.textContent = err.message || 'Failed to update status';
+    toast('✕ Unable to apply', err.message || 'Status update failed');
+  }
+}
 /* ---------- WALLETS ---------- */
 function renderWallets() { walletTable('wallets', renderWalletsRows, 100); }
 function renderWalletsRows(res, search) {
   var h = '<div class="toolbar"><input type="search" id="wallet-search-wallets" placeholder="Search address / wallet id" value="' + esc(search) + '" onkeydown="if(event.key===\'Enter\')renderWallets()"><button class="btn btn-secondary btn-sm" onclick="renderWallets()">Search</button></div>';
-  h += '<div class="table-wrap"><table><thead><tr><th>Wallet</th><th>COOP</th><th>Coopoint</th><th>Sent</th><th>Received</th><th>Mining</th><th>Txs</th><th>Last active</th></tr></thead><tbody>';
+  h += '<div class="table-wrap"><table><thead><tr><th>Wallet</th><th>COOP</th><th>Coopoint</th><th>Sent</th><th>Received</th><th>Mining</th><th>Status</th><th>Txs</th><th>Last active</th></tr></thead><tbody>';
   (res.rows || []).forEach(function (w) {
-    h += '<tr class="clickable" onclick="openUser(\'' + w.id + '\')"><td class="mono">' + shortAddr(w.address) + '</td><td>' + fmtNum(w.coop_balance, 4) + '</td><td>' + fmtNum(w.cooptoken_balance, 4) + '</td><td>' + fmtNum(w.total_sent, 4) + '</td><td>' + fmtNum(w.total_received, 4) + '</td><td>' + pill(w.mining_state) + '</td><td>' + (w.tx_count || 0) + '</td><td style="font-size:11px">' + fmtDate(w.last_active_at) + '</td></tr>';
+    h += '<tr class="clickable" onclick="openUser(\'' + w.id + '\')"><td class="mono">' + shortAddr(w.address) + '</td><td>' + fmtNum(w.coop_balance, 4) + '</td><td>' + fmtNum(w.cooptoken_balance, 4) + '</td><td>' + fmtNum(w.total_sent, 4) + '</td><td>' + fmtNum(w.total_received, 4) + '</td><td>' + pill(w.mining_state) + '</td><td>' + statusPill(w.status) + '</td><td>' + (w.tx_count || 0) + '</td><td style="font-size:11px">' + fmtDate(w.last_active_at) + '</td></tr>';
   });
-  if (!(res.rows || []).length) h += '<tr><td colspan="8">No wallets found</td></tr>';
+  if (!(res.rows || []).length) h += '<tr><td colspan="9">No wallets found</td></tr>';
   h += '</tbody></table></div>';
   h += '<div class="tag" style="margin-top:10px">' + (res.total || 0) + ' wallet(s) total</div>';
   $( 'body-wallets').innerHTML = h;

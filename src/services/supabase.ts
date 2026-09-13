@@ -50,7 +50,9 @@ class DatabaseService {
       biometricsEnabled: row.biometrics_enabled ?? true,
       notificationsEnabled: row.notifications_enabled ?? true,
       autoLockMinutes: row.auto_lock_minutes ?? 5,
-      createdAt: row.created_at
+      createdAt: row.created_at,
+      status: (row.status ?? 'active') as WalletAccount['status'],
+      restrictedReason: row.restricted_reason ?? null
     };
   }
 

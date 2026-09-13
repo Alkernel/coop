@@ -64,6 +64,31 @@ export const HomeScreen: React.FC = () => {
         </button>
       </div>
 
+      {/* Account restriction notice (set by admin) */}
+      {account?.status && account.status !== 'active' && (
+        <div style={{
+          background: 'var(--accent-red)',
+          color: '#fff',
+          borderRadius: 14,
+          padding: '12px 14px',
+          marginBottom: 16,
+          fontSize: 13,
+          lineHeight: 1.45
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>
+            {account.status === 'restricted' && 'Account restricted'}
+            {account.status === 'suspended' && 'Account suspended'}
+            {account.status === 'banned' && 'Account banned'}
+          </div>
+          <div style={{ opacity: 0.92 }}>
+            {account.status === 'restricted'
+              ? 'You can view your balances, but sending, swapping, tasks and mining are disabled.'
+              : 'This account has been locked by an administrator.'}
+            {account.restrictedReason ? ` Reason: ${account.restrictedReason}` : ''}
+          </div>
+        </div>
+      )}
+
       {/* Total Balance Card */}
       <div className="bubble-card bubble-card-elevated" style={{ background: 'var(--bg-surface)' }}>
         <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>COOP Balance</span>
