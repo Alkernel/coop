@@ -8,6 +8,7 @@ type SendPhase = 'idle' | 'preparing' | 'processing' | 'confirming';
 export const SendScreen: React.FC = () => {
   const { goBack, account, executeSend } = useWallet();
   const [recipient, setRecipient] = useState('');
+  const [memo, setMemo] = useState('');
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
   const [showReview, setShowReview] = useState(false);
@@ -72,7 +73,7 @@ export const SendScreen: React.FC = () => {
     const sendAmount = numAmount;
     try {
       setPhase('processing');
-      const res = await executeSend(dest, sendAmount);
+      const res = await executeSend(dest, sendAmount, memo);
       setPhase('confirming');
       setShowReview(false);
       setPhase('idle');
@@ -227,6 +228,23 @@ export const SendScreen: React.FC = () => {
           </div>
         </div>
 
+        {/* Comment (memo) */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 13, fontWeight: 700, display: 'block', marginBottom: 8 }}>
+            Comment (optional)
+          </label>
+          <input
+            type="text"
+            className="input-bubble"
+            placeholder="Add a note for the recipient (max 200 chars)"
+            value={memo}
+            maxLength={200}
+            onChange={e => setMemo(e.target.value)}
+            style={{ fontSize: 13 }}
+            id="input-send-memo"
+          />
+        </div>
+
         {/* Internal transfer: no network fee (no blockchain leg yet) */}
         <div style={{
           padding: '14px 16px',
@@ -345,6 +363,12 @@ export const SendScreen: React.FC = () => {
                 <span style={{ color: 'var(--text-secondary)' }}>Network Fee:</span>
                 <span style={{ fontWeight: 600 }}>0.00 (internal)</span>
               </div>
+              {memo.trim() && (
+                <div style={{ fontSize: 14 }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Comment: </span>
+                  <span style={{ fontWeight: 600 }}>{memo.trim()}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, paddingTop: 8, borderTop: '1px solid var(--border-color)' }}>
                 <span>Total Deduct:</span>
                 <span>{total.toFixed(2)} COOPCoin</span>

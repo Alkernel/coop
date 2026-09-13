@@ -17,7 +17,8 @@ export type ScreenName =
   | 'about'
   | 'security'
   | 'locked'
-  | 'asset_detail';
+  | 'asset_detail'
+  | 'tx_detail';
 
 export type Currency = 'COOP' | 'Coopoints';
 export type SwapDirection = 'points_to_coop' | 'coop_to_points';
@@ -110,6 +111,8 @@ export interface Transaction {
   status: 'Complete' | 'Completed' | 'Pending' | 'Failed';
   txHash: string;
   notes?: string;
+  // Sender comment (parsed from the ledger row notes on receive/send rows).
+  memo?: string;
   timestamp: number;
 }
 

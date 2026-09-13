@@ -552,6 +552,33 @@ function renderWalletsRows(res, search) {
 }
 
 /* ---------- TRANSACTIONS ---------- */
+var TXROWS = [];
+function openTx(i) {
+  var t = TXROWS[i];
+  if (!t) return;
+  var el = $( 'body-transactions');
+  var memo = null, notes = t.notes || '';
+  var m = notes.match(/\| Memo: ([\s\S]+)$/);
+  if (m) { memo = m[1]; notes = notes.replace(/\s*\| Memo: [\s\S]+$/, ''); }
+  var h = '<div class="toolbar"><button class="btn btn-secondary btn-sm" onclick="renderTransactions()">&larr; Back to transactions</button></div>';
+  h += '<div class="card"><div class="card-title">Transaction detail</div>';
+  h += '<div class="kv"><span class="k">Type</span><span class="v">' + esc(t.tx_type) + '</span></div>';
+  h += '<div class="kv"><span class="k">User wallet</span><span class="v mono">' + esc(t.address || t.wallet_id) + '</span></div>';
+  h += '<div class="kv"><span class="k">Asset</span><span class="v">' + esc(t.currency) + '</span></div>';
+  h += '<div class="kv"><span class="k">Amount</span><span class="v">' + fmtNum(t.amount, 4) + '</span></div>';
+  if (t.points_amount) h += '<div class="kv"><span class="k">Coopoint leg</span><span class="v">' + fmtNum(t.points_amount, 2) + '</span></div>';
+  if (t.direction) h += '<div class="kv"><span class="k">Direction</span><span class="v">' + esc(t.direction) + '</span></div>';
+  if (t.counterparty) h += '<div class="kv"><span class="k">Counterparty</span><span class="v mono">' + esc(t.counterparty) + '</span></div>';
+  h += '<div class="kv"><span class="k">Fee</span><span class="v">' + fmtNum(t.fee || 0, 4) + '</span></div>';
+  h += '<div class="kv"><span class="k">Status</span><span class="v">' + pill(t.status) + '</span></div>';
+  h += '<div class="kv"><span class="k">Date</span><span class="v">' + fmtDate(t.created_at) + '</span></div>';
+  h += '<div class="kv"><span class="k">Tx ID</span><span class="v mono" style="word-break:break-all">' + esc(t.tx_hash) + '</span></div>';
+  h += '</div>';
+  if (memo) h += '<div class="card"><div class="card-title">Sender comment (memo)</div><div class="hint" style="font-size:14px;font-weight:600;color:var(--text-primary)">' + esc(memo) + '</div></div>';
+  if (notes) h += '<div class="card"><div class="card-title">Ledger notes</div><div class="hint">' + esc(notes) + '</div></div>';
+  h += '<div class="btn-row"><button class="btn btn-secondary" onclick="openUser(\'' + t.wallet_id + '\')">Open user wallet</button></div>';
+  el.innerHTML = h;
+}
 function renderTransactions() {
   var el = $( 'body-transactions');
   el.innerHTML = '<div class="tag">Loading</div>';
@@ -559,15 +586,18 @@ function renderTransactions() {
   var search = $( 'tx-search') ? $( 'tx-search').value : '';
   rpc( 'rpc_admin_transactions', { p_admin_key: null, p_type: type, p_search: search || null, p_limit: 200, p_offset: 0 }).then(function (res) {
     var h = '<div class="toolbar"><select id="tx-type-filter" onchange="renderTransactions()">';
-    ['all', 'send', 'receive', 'swap', 'mining', 'boost', 'task'].forEach(function (t) {
+    ['all', 'send', 'receive', 'swap', 'mining', 'boost', 'task', 'admin'].forEach(function (t) {
       h += '<option value="' + t + '"' + (type === t ? ' selected' : '') + '>' + t + '</option>';
     });
     h += '</select><input type="search" id="tx-search" placeholder="Search address / hash" value="' + esc(search) + '" onkeydown="if(event.key===\'Enter\')renderTransactions()"><button class="btn btn-secondary btn-sm" onclick="renderTransactions()">Filter</button></div>';
     h += '<div class="table-wrap"><table><thead><tr><th>User</th><th>Type</th><th>Asset</th><th>Amount</th><th>Points</th><th>Status</th><th>Date</th></tr></thead><tbody>';
     if (!(res.rows || []).length) h += '<tr><td colspan="7">No transactions</td></tr>';
-    else (res.rows || []).forEach(function (t) {
-      h += '<tr><td class="mono">' + shortAddr(t.address) + '</td><td>' + esc(t.tx_type) + '</td><td>' + esc(t.currency) + '</td><td>' + fmtNum(t.amount, 4) + '</td><td>' + (t.points_amount ? fmtNum(t.points_amount, 2) : '') + '</td><td>' + pill(t.status) + '</td><td style="font-size:11px">' + fmtDate(t.created_at) + '</td></tr>';
-    });
+    else {
+      TXROWS = res.rows || [];
+      TXROWS.forEach(function (t, i) {
+        h += '<tr class="clickable" onclick="openTx(' + i + ')"><td class="mono">' + shortAddr(t.address) + '</td><td>' + esc(t.tx_type) + '</td><td>' + esc(t.currency) + '</td><td>' + fmtNum(t.amount, 4) + '</td><td>' + (t.points_amount ? fmtNum(t.points_amount, 2) : '') + '</td><td>' + pill(t.status) + '</td><td style="font-size:11px">' + fmtDate(t.created_at) + '</td></tr>';
+      });
+    }
     h += '</tbody></table></div>';
     h += '<div class="tag" style="margin-top:10px">' + (res.total || 0) + ' transaction(s)</div>';
     el.innerHTML = h;

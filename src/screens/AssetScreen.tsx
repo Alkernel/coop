@@ -8,7 +8,7 @@ const fmt = (n: number, d = 2) =>
   n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
 export const AssetScreen: React.FC = () => {
-  const { goBack, account, selectedAsset, transactions, navigateTo } = useWallet();
+  const { goBack, account, selectedAsset, transactions, navigateTo, openTransaction } = useWallet();
   const [copied, setCopied] = useState(false);
 
   const isCOOP = selectedAsset === 'COOP';
@@ -102,7 +102,12 @@ export const AssetScreen: React.FC = () => {
             No transactions yet
           </div>
         ) : assetTxs.slice(0, 20).map((t: Transaction) => (
-          <div key={t.id} className="bubble-card" style={{ padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div
+            key={t.id}
+            className="bubble-card"
+            onClick={() => openTransaction(t)}
+            style={{ padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+          >
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'capitalize' }}>{t.txType === 'admin' ? 'Coop Rewards' : t.txType}</div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>

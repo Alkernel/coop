@@ -507,7 +507,7 @@ begin
   ) values (
     p_wallet_id,
     now(),
-    now() + make_interval(hours => v_remaining_hours),
+    now() + (v_remaining_hours * interval '1 hour'),
     v_settings.base_mining_rate,
     v_boost,
     'mining'
@@ -850,7 +850,8 @@ create or replace function public.rpc_execute_send(
   p_wallet_id uuid,
   p_recipient text,
   p_amount numeric,
-  p_client_nonce text default null
+  p_client_nonce text default null,
+  p_memo text default null
 )
 returns jsonb
 language plpgsql
@@ -859,6 +860,7 @@ as $$
 declare
   v_amount numeric(20, 4);
   v_recipient_addr text;
+  v_memo text;
   v_wallet public.wallets%rowtype;
   v_recipient_wallet public.wallets%rowtype;
   v_tx_hash text;
@@ -925,12 +927,19 @@ begin
 
   v_tx_hash := '0x' || md5(random()::text || clock_timestamp()::text || p_wallet_id::text);
 
+  -- Optional sender comment, shown to the recipient on the transaction detail page.
+  v_memo := nullif(trim(coalesce(p_memo, '')), '');
+  if v_memo is not null and length(v_memo) > 200 then
+    v_memo := substring(v_memo from 1 for 200);
+  end if;
+
   insert into public.transactions (
     wallet_id, tx_type, amount, currency, counterparty, fee, status, tx_hash, notes
   ) values (
     p_wallet_id, 'send', v_amount, 'COOP', v_recipient_wallet.address, 0, 'Completed', v_tx_hash,
     'Sent ' || v_amount::text || ' COOPCoin to ' || v_recipient_wallet.address
       || ' (internal transfer, no blockchain hash yet)'
+      || case when v_memo is not null then ' | Memo: ' || v_memo else '' end
   );
 
   insert into public.transactions (
@@ -939,6 +948,7 @@ begin
     v_recipient_wallet.id, 'receive', v_amount, 'COOP', v_wallet.address, 0, 'Completed', v_tx_hash,
     'Received ' || v_amount::text || ' COOPCoin from ' || v_wallet.address
       || ' (internal transfer, no blockchain hash yet)'
+      || case when v_memo is not null then ' | Memo: ' || v_memo else '' end
   );
 
   return jsonb_build_object(
@@ -947,7 +957,8 @@ begin
     'amount', v_amount,
     'fee', 0,
     'status', 'Completed',
-    'tx_hash', v_tx_hash
+    'tx_hash', v_tx_hash,
+    'memo', v_memo
   );
 end;
 $$;

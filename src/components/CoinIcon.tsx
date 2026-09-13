@@ -56,8 +56,9 @@ export const CoinIcon: React.FC<CoinIconProps> = ({
         alt={`${coin} token`}
         width={size}
         height={size}
-        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }}
+        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain', WebkitTouchCallout: 'none', userSelect: 'none' }}
         draggable={false}
+        onContextMenu={(e) => e.preventDefault()}
       />
     </div>
   );

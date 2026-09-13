@@ -3,7 +3,7 @@ import { ChevronLeft, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Zap, CheckCir
 import { useWallet } from '../context/WalletContext';
 
 export const HistoryScreen: React.FC = () => {
-  const { goBack, transactions } = useWallet();
+  const { goBack, transactions, openTransaction } = useWallet();
   const [filter, setFilter] = useState<'all' | 'send' | 'receive' | 'swap'>('all');
 
   const filtered = transactions.filter(t => {
@@ -80,12 +80,14 @@ export const HistoryScreen: React.FC = () => {
               <div
                 key={tx.id}
                 className="bubble-card"
+                onClick={() => openTransaction(tx)}
                 style={{
                   padding: '14px 16px',
                   marginBottom: 0,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'space-between'
+                  justifyContent: 'space-between',
+                  cursor: 'pointer'
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

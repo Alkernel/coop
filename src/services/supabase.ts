@@ -69,6 +69,13 @@ class DatabaseService {
   }
 
   private txFromDb(row: any): Transaction {
+    // Memos are stored in notes as " | Memo: <comment>" by rpc_execute_send.
+    const notes: string | undefined = row.notes || undefined;
+    let memo: string | undefined;
+    if (notes) {
+      const m = notes.match(/\| Memo: ([\s\S]+)$/);
+      if (m) memo = m[1].trim();
+    }
     return {
       id: row.id,
       txType: row.tx_type,
@@ -80,7 +87,8 @@ class DatabaseService {
       fee: Number(row.fee ?? 0),
       status: row.status,
       txHash: row.tx_hash,
-      notes: row.notes || undefined,
+      notes,
+      memo,
       timestamp: new Date(row.created_at).getTime()
     };
   }
@@ -221,7 +229,8 @@ class DatabaseService {
   async executeSend(
     wallet: WalletAccount,
     recipient: string,
-    amount: number
+    amount: number,
+    memo?: string
   ): Promise<{
     wallet: WalletAccount;
     fee: number;
@@ -238,7 +247,8 @@ class DatabaseService {
       p_wallet_id: wallet.id,
       p_recipient: recipient,
       p_amount: amount,
-      p_client_nonce: nonce
+      p_client_nonce: nonce,
+      p_memo: memo?.trim() || null
     });
     if (error) throw new Error(error.message);
     return {

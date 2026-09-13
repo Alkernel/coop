@@ -20,6 +20,7 @@ import { AboutScreen } from './screens/AboutScreen';
 import { SecurityScreen } from './screens/SecurityScreen';
 import { WalletLockScreen } from './screens/WalletLockScreen';
 import { AssetScreen } from './screens/AssetScreen';
+import { TxDetailScreen } from './screens/TxDetailScreen';
 
 export const App: React.FC = () => {
   const { currentScreen } = useWallet();
@@ -64,6 +65,8 @@ export const App: React.FC = () => {
         return <WalletLockScreen />;
       case 'asset_detail':
         return <AssetScreen />;
+      case 'tx_detail':
+        return <TxDetailScreen />;
       default:
         return <HomeScreen />;
     }

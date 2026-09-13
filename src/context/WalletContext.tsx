@@ -34,6 +34,7 @@ interface WalletContextType {
   
   tasks: TaskItem[];
   transactions: Transaction[];
+  selectedTx: Transaction | null;
   notifications: AppNotification[];
   unreadNotificationsCount: number;
   
@@ -49,7 +50,8 @@ interface WalletContextType {
   startMining: () => Promise<void>;
   stopMining: () => Promise<number>;
   executeSwap: (direction: SwapDirection, amount: number) => Promise<{ points: number; coop: number; txHash: string }>;
-  executeSend: (recipient: string, amount: number) => Promise<{ fee: number; status: string; txHash: string; recipientAddress: string; amount: number }>;
+  executeSend: (recipient: string, amount: number, memo?: string) => Promise<{ fee: number; status: string; txHash: string; recipientAddress: string; amount: number }>;
+  openTransaction: (tx: Transaction) => void;
   purchaseBoost: (tierId: string) => Promise<boolean>;
   claimTask: (taskId: string) => Promise<number>;
   updateAccountSettings: (updates: Partial<WalletAccount>) => void;
@@ -68,6 +70,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [miningRemainingMs, setMiningRemainingMs] = useState<number>(0);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<'COOP' | 'COOPTOKEN' | null>(null);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -288,14 +291,20 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // --- Send Handlers ---
-  const executeSend = async (recipient: string, amount: number): Promise<{ fee: number; status: string; txHash: string; recipientAddress: string; amount: number }> => {
+  const executeSend = async (recipient: string, amount: number, memo?: string): Promise<{ fee: number; status: string; txHash: string; recipientAddress: string; amount: number }> => {
     if (!account) throw new Error('No active wallet');
-    const res = await dbService.executeSend(account, recipient, amount);
+    const res = await dbService.executeSend(account, recipient, amount, memo);
     setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
     setTransactions(await dbService.getTransactions(account.id));
     addNotification('Transfer Sent', `Sent ${res.amount} COOP to ${res.recipientAddress.slice(0, 8)}...`, 'tx');
     return { fee: res.fee, status: res.status, txHash: res.txHash, recipientAddress: res.recipientAddress, amount: res.amount };
   };
+
+  // --- Transaction detail (expand a history row into its own page) ---
+  const openTransaction = useCallback((tx: Transaction) => {
+    setSelectedTx(tx);
+    navigateTo('tx_detail');
+  }, [navigateTo]);
 
   // --- Boosts (server-gated: purchases live only when admin enables them) ---
   const purchaseBoost = async (tierId: string): Promise<boolean> => {
@@ -351,8 +360,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         settings,
         selectedAsset,
         setSelectedAsset,
+        selectedTx,
         tasks,
         transactions,
+        openTransaction,
         notifications,
         unreadNotificationsCount: notifications.filter(n => !n.read).length,
         loginWithPrivateKey,

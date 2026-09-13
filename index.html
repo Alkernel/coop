@@ -10,6 +10,22 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      /* Protect asset logos: block long-press save, drag-out and selection on images */
+      img {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-user-drag: none;
+        -webkit-touch-callout: none;
+        pointer-events: none;
+      }
+    </style>
+    <script>
+      // Block "Save image as..." via long-press / right-click on every image (logos included).
+      document.addEventListener('contextmenu', function (e) {
+        if (e.target && e.target.tagName === 'IMG') e.preventDefault();
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
