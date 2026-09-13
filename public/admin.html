@@ -1007,27 +1007,20 @@ function closeSupportView() {
 function adminPollSupport() {
   if (!SUPPORT_TICKET) return;
   rpc( 'rpc_support_admin_poll', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET }).then(function (d) {
-    renderSupportThread(d);
+    updateSupportThread(d);
   }).catch(function () {});
 }
 
-function renderSupportThread(d) {
-  var el = $( 'body-support');
-  if (!el) return;
-  var t = d.ticket || {};
+function supportPresenceHtml(d) {
   var userOnline = !!d.user_online;
   var userTyping = !!d.user_typing;
+  return (userOnline ? '<span style="color:var(--accent-green)">● user online</span>' : '○ user offline') +
+    (userTyping ? ' <span style="color:var(--accent-amber)">- typing...</span>' : '');
+}
+
+function supportMessagesHtml(d) {
   var msgs = d.messages || [];
-  var h = '<div class="toolbar"><button class="btn btn-secondary btn-sm" onclick="closeSupportView()">&larr; Back to tickets</button>';
-  if (t.status !== 'closed') h += '<button class="btn btn-sm" style="margin-left:6px;background:var(--accent-red);color:#fff" onclick="closeTicket()">Close ticket</button>';
-  h += '</div>';
-  h += '<div class="card"><div class="card-title">Conversation <span class="mono" style="font-size:11px;font-weight:400">' + shortAddr(t.id) + '</span></div>';
-  h += '<div class="kv"><span class="k">User</span><span class="v">' + esc(t.name || 'User') + ' <span class="mono">' + shortAddr(t.wallet_id) + '</span></span></div>';
-  h += '<div class="kv"><span class="k">Email</span><span class="v">' + esc(t.email || '-') + '</span></div>';
-  h += '<div class="kv"><span class="k">Subject</span><span class="v">' + esc(t.subject || '') + '</span></div>';
-  h += '<div class="kv"><span class="k">Status</span><span class="v">' + pill(t.status) + ' <span style="font-size:11px">' + (userOnline ? '<span style="color:var(--accent-green)">● user online</span>' : '○ user offline') + (userTyping ? ' <span style="color:var(--accent-amber)">- typing...</span>' : '') + '</span></span></div>';
-  h += '</div>';
-  h += '<div class="card"><div class="card-title">Messages</div><div id="support-thread" style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding:4px 2px">';
+  var h = '';
   if (!msgs.length) h += '<div class="tag">No messages yet</div>';
   msgs.forEach(function (m) {
     var isAdmin = m.sender === 'admin';
@@ -1038,12 +1031,54 @@ function renderSupportThread(d) {
     h += '<div style="font-size:10px;opacity:.8;margin-top:3px">' + label + ' - ' + fmtDate(m.created_at) + '</div>';
     h += '</div></div>';
   });
+  return h;
+}
+
+// Incremental poll refresh: update only the presence line + messages.
+// NEVER rebuild the reply box / status chrome, otherwise the admin loses
+// their typed text, caret, and focus every 3 seconds.
+function updateSupportThread(d) {
+  if (!$( 'support-thread')) { renderSupportThread(d); return; }
+  var p = $( 'support-presence'); if (p) p.innerHTML = supportPresenceHtml(d);
+  var thr = $( 'support-thread');
+  if (thr) {
+    var nearBottom = thr.scrollHeight - thr.scrollTop - thr.clientHeight < 60;
+    thr.innerHTML = supportMessagesHtml(d);
+    if (nearBottom) thr.scrollTop = thr.scrollHeight;
+  }
+}
+
+function renderSupportThread(d) {
+  var el = $( 'body-support');
+  if (!el) return;
+  var t = d.ticket || {};
+  var h = '<div class="toolbar"><button class="btn btn-secondary btn-sm" onclick="closeSupportView()">&larr; Back to tickets</button>';
+  if (t.status !== 'closed') h += '<button class="btn btn-sm" style="margin-left:6px;background:var(--accent-red);color:#fff" onclick="closeTicket()">Close ticket</button>';
   h += '</div>';
+  h += '<div class="card"><div class="card-title">Conversation <span class="mono" style="font-size:11px;font-weight:400">' + shortAddr(t.id) + '</span></div>';
+  h += '<div class="kv"><span class="k">User</span><span class="v">' + esc(t.name || 'User') + ' <span class="mono">' + shortAddr(t.wallet_id) + '</span></span></div>';
+  h += '<div class="kv"><span class="k">Email</span><span class="v">' + esc(t.email || '-') + '</span></div>';
+  h += '<div class="kv"><span class="k">Subject</span><span class="v">' + esc(t.subject || '') + '</span></div>';
+  h += '<div class="kv"><span class="k">Status</span><span class="v">' + pill(t.status) + ' <span id="support-presence" style="font-size:11px">' + supportPresenceHtml(d) + '</span></span></div>';
+  h += '</div>';
+  h += '<div class="card"><div class="card-title">Messages</div><div id="support-thread" style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding:4px 2px">' + supportMessagesHtml(d) + '</div>';
   h += '<div class="field" style="margin-top:12px"><label>Reply as admin</label><textarea id="support-reply" rows="3" style="width:100%;resize:vertical" placeholder="Type a reply..."></textarea></div>';
   h += '<div class="btn-row"><button class="btn" onclick="sendAdminReply()" id="support-send-btn">Send Reply</button></div>';
   h += '<div id="support-msg" class="msg"></div></div>';
   el.innerHTML = h;
   var thr = $( 'support-thread'); if (thr) thr.scrollTop = thr.scrollHeight;
+  var box = $( 'support-reply');
+  if (box) box.addEventListener('input', supportAdminTyping);
+}
+
+// Debounced "admin is typing" ping so the user app shows a typing indicator.
+var _supportTypingSentAt = 0;
+function supportAdminTyping() {
+  if (!SUPPORT_TICKET) return;
+  var now = Date.now();
+  if (now - _supportTypingSentAt < 2500) return;
+  _supportTypingSentAt = now;
+  rpc( 'rpc_support_typing', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET }).catch(function () {});
 }
 
 function sendAdminReply() {
