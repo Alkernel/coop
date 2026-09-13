@@ -16,12 +16,12 @@ export const HelpSupportScreen: React.FC = () => {
 
   const faqs: FaqItem[] = [
     {
-      q: 'What is the difference between COOP and Cooptoken?',
-      a: 'COOP is the main liquid cryptocurrency token used for transfers, balance storage, and trading. Cooptoken is the exclusive pre-TGE mining reward token generated every 12 hours. You can swap 1,000 Cooptoken for 1 COOP at any time.'
+      q: 'What is the difference between COOP and Coopoint?',
+      a: 'COOP is the main liquid cryptocurrency token used for transfers, balance storage, and trading. Coopoint is the exclusive pre-TGE mining reward token generated every 12 hours. You can swap 1,000 Coopoint for 1 COOP at any time.'
     },
     {
       q: 'How does the 12-hour mining cycle work?',
-      a: 'Mining runs continuously in 12-hour sessions. Each session produces a base of 50 Cooptoken (plus any boosts). Once the countdown completes, tap "Claim" to deposit the tokens to your balance.'
+      a: 'Mining runs continuously in 12-hour sessions. Each session produces a base of 100 Coopoint (plus any boosts). Once the countdown completes, tap "Claim" to deposit the Coopoint to your balance.'
     },
     {
       q: 'What happens if I lose my private key?',

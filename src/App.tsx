@@ -19,6 +19,7 @@ import { HelpSupportScreen } from './screens/HelpSupportScreen';
 import { AboutScreen } from './screens/AboutScreen';
 import { SecurityScreen } from './screens/SecurityScreen';
 import { WalletLockScreen } from './screens/WalletLockScreen';
+import { AssetScreen } from './screens/AssetScreen';
 
 export const App: React.FC = () => {
   const { currentScreen } = useWallet();
@@ -61,6 +62,8 @@ export const App: React.FC = () => {
         return <SecurityScreen />;
       case 'locked':
         return <WalletLockScreen />;
+      case 'asset_detail':
+        return <AssetScreen />;
       default:
         return <HomeScreen />;
     }

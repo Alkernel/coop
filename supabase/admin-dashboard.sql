@@ -80,7 +80,7 @@ alter table public.admin_audit_log enable row level security;
 --     NOTE: re-running this file resets these values to the defaults above.
 update public.admin_settings set
   points_per_coop = 1000.0000,
-  base_mining_rate = 50.0000,
+  base_mining_rate = 8.3333,
   daily_mining_hours = 12.00,
   boost_purchases_enabled = false,
   boost_tiers = '[

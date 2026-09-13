@@ -16,7 +16,8 @@ export type ScreenName =
   | 'help_support'
   | 'about'
   | 'security'
-  | 'locked';
+  | 'locked'
+  | 'asset_detail';
 
 export type Currency = 'COOP' | 'Coopoints';
 export type SwapDirection = 'points_to_coop' | 'coop_to_points';

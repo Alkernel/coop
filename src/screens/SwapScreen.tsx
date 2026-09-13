@@ -10,7 +10,7 @@ const fmt = (n: number, d = 2) =>
 
 export const SwapScreen: React.FC = () => {
   const { goBack, account, executeSwap, settings } = useWallet();
-  // Asset rule: Cooptoken -> COOP (Coopcoin). Bidirectional swap supported.
+  // Asset rule: Coopoint -> COOP (Coopcoin). Bidirectional swap supported.
   const [direction, setDirection] = useState<SwapDirection>('points_to_coop');
   const [fromAmount, setFromAmount] = useState<string>('1000');
   const [loading, setLoading] = useState(false);
@@ -65,9 +65,9 @@ export const SwapScreen: React.FC = () => {
       const res = await executeSwap(direction, numAmount);
       setShowConfirm(false);
       if (isPointsToCoop) {
-        setSuccessMsg(`Converted ${fmt(res.points, 0)} Cooptoken → ${res.coop} COOP. ID ${res.txHash}.`);
+        setSuccessMsg(`Converted ${fmt(res.points, 0)} Point → ${res.coop} COOP. ID ${res.txHash}.`);
       } else {
-        setSuccessMsg(`Converted ${fmt(res.coop, 0)} COOP → ${res.points} Cooptoken. ID ${res.txHash}.`);
+        setSuccessMsg(`Converted ${fmt(res.coop, 0)} COOP → ${res.points} Point. ID ${res.txHash}.`);
       }
       confetti({ particleCount: 70, spread: 60, origin: { y: 0.7 } });
       setFromAmount('');
@@ -95,7 +95,7 @@ export const SwapScreen: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>From</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              Balance: {fmt(fromBalance)} {isPointsToCoop ? 'Cooptoken' : 'COOP'}
+              Balance: {fmt(fromBalance)} {isPointsToCoop ? 'Coopoint' : 'COOP'}
             </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -142,7 +142,7 @@ export const SwapScreen: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>To</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              Balance: {fmt(toBalance)} {isPointsToCoop ? 'COOP' : 'Cooptoken'}
+              Balance: {fmt(toBalance)} {isPointsToCoop ? 'COOP' : 'Coopoint'}
             </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -165,7 +165,7 @@ export const SwapScreen: React.FC = () => {
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Rate</span>
             <span style={{ fontSize: 13, fontWeight: 700 }}>
               {settingsLoaded
-                ? `${fmt(pointsPerCoop, 0)} Cooptoken = 1 COOP`
+                ? `${fmt(pointsPerCoop, 0)} Coopoint = 1 COOP`
                 : 'Loading rate from server…'}
             </span>
           </div>
@@ -174,20 +174,20 @@ export const SwapScreen: React.FC = () => {
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Estimated</span>
               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-green)' }}>
                 {isPointsToCoop
-                  ? `${fmt(numAmount, 0)} Cooptoken → ${toAmount} COOP`
-                  : `${fmt(numAmount, 0)} COOP → ${toAmount} Cooptoken`}
+                  ? `${fmt(numAmount, 0)} Coopoint → ${toAmount} COOP`
+                  : `${fmt(numAmount, 0)} COOP → ${toAmount} Coopoint`}
               </span>
             </div>
           )}
           {settings && (
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                {isPointsToCoop ? 'Remaining Reward Pool' : 'Cooptoken Balance Impact'}
+                {isPointsToCoop ? 'Remaining Reward Pool' : 'Coopoint Balance Impact'}
               </span>
               <span style={{ fontSize: 13, fontWeight: 700 }}>
                 {isPointsToCoop
                   ? `${fmt(settings.remainingCoopRewardPool)} COOP`
-                  : `+${fmt(toNum, 0)} Cooptoken`}
+                  : `+${fmt(toNum, 0)} Coopoint`}
               </span>
             </div>
           )}
@@ -242,14 +242,14 @@ export const SwapScreen: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
               <div style={{ textAlign: 'center', fontSize: 15, fontWeight: 700 }}>
                 {isPointsToCoop
-                  ? <>You are converting {fmt(numAmount, 0)} Cooptoken → <span style={{ color: 'var(--accent-green)' }}>{toAmount} COOP</span></>
-                  : <>You are converting {fmt(numAmount, 0)} COOP → <span style={{ color: 'var(--accent-green)' }}>{toAmount} Cooptoken</span></>
+                  ? <>You are converting {fmt(numAmount, 0)} Coopoint → <span style={{ color: 'var(--accent-green)' }}>{toAmount} COOP</span></>
+                  : <>You are converting {fmt(numAmount, 0)} COOP → <span style={{ color: 'var(--accent-green)' }}>{toAmount} Coopoint</span></>
                 }
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Exchange Rate:</span>
                 <span style={{ fontWeight: 600 }}>
-                  {settingsLoaded ? `${fmt(pointsPerCoop, 0)} Cooptoken = 1 COOP` : 'Loading…'}
+                  {settingsLoaded ? `${fmt(pointsPerCoop, 0)} Coopoint = 1 COOP` : 'Loading…'}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>

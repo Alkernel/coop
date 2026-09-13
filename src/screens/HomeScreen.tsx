@@ -11,11 +11,11 @@ export const HomeScreen: React.FC = () => {
     navigateTo, 
     unreadNotificationsCount, 
     miningStatus,
-    isMiningActive 
+    isMiningActive,
+    setSelectedAsset
   } = useWallet();
 
   const [showNotifications, setShowNotifications] = useState(false);
-  const [activeAsset, setActiveAsset] = useState<'COOP' | 'COOPTOKEN' | null>(null);
 
   // Balances are real Supabase values. No invented USD price: USD is only
   // estimated while explicitly labeled, using no hardcoded market price.
@@ -160,7 +160,7 @@ export const HomeScreen: React.FC = () => {
           {
             coin: 'COOPTOKEN' as const,
             name: 'Coopoint',
-            symbol: 'Cooptoken',
+            symbol: 'Coopoint',
             network: 'Mining rewards · swap to Coopcoin',
             balance: cooptokenBalance,
             soon: false,
@@ -183,7 +183,12 @@ export const HomeScreen: React.FC = () => {
           <div
             key={asset.coin}
             className="bubble-card"
-            onClick={() => asset.soon ? undefined : setActiveAsset(asset.coin as 'COOP' | 'COOPTOKEN')}
+            onClick={() => {
+              if (!asset.soon) {
+                setSelectedAsset(asset.coin as 'COOP' | 'COOPTOKEN');
+                navigateTo('asset_detail');
+              }
+            }}
             style={{
               padding: '12px 14px',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -282,67 +287,6 @@ export const HomeScreen: React.FC = () => {
           <ChevronRight size={16} color="var(--text-tertiary)" />
         </div>
       </div>
-
-      {/* Asset Detail Popover */}
-      {activeAsset && (
-        <div
-          className="drawer-backdrop"
-          onClick={() => setActiveAsset(null)}
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
-        >
-          <div
-            className="bubble-card bubble-card-elevated"
-            onClick={e => e.stopPropagation()}
-            style={{ width: '100%', maxWidth: 420, padding: '20px 18px', borderRadius: '20px 20px 0 0', marginBottom: 0 }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <CoinIcon coin={activeAsset} size={32} />
-                <span style={{ fontSize: 16, fontWeight: 800 }}>
-                  {activeAsset === 'COOP' ? 'Coopcoin' : 'Coopoint'}
-                </span>
-              </div>
-              <button
-                onClick={() => setActiveAsset(null)}
-                className="header-icon-btn"
-                aria-label="Close"
-              >
-                <span style={{ fontSize: 18, fontWeight: 600, lineHeight: 1 }}>✕</span>
-              </button>
-            </div>
-
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 4 }}>Available Balance</div>
-            <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>
-              {(activeAsset === 'COOP' ? coopBalance : cooptokenBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              {' '}{activeAsset === 'COOP' ? 'COOP' : 'Cooptoken'}
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {activeAsset === 'COOP' && (
-                <>
-                  <button className="pill-btn pill-btn-primary" onClick={() => { setActiveAsset(null); navigateTo('send'); }} style={{ flex: 1, minWidth: 100 }}>
-                    <ArrowUpRight size={16} /> Send
-                  </button>
-                  <button className="pill-btn pill-btn-primary" onClick={() => { setActiveAsset(null); navigateTo('receive'); }} style={{ flex: 1, minWidth: 100 }}>
-                    <ArrowDownLeft size={16} /> Receive
-                  </button>
-                </>
-              )}
-              <button className="pill-btn pill-btn-secondary" onClick={() => { setActiveAsset(null); navigateTo('swap'); }} style={{ flex: 1, minWidth: 100 }}>
-                <ArrowLeftRight size={16} /> {activeAsset === 'COOP' ? 'To Coopoint' : 'To Coopcoin'}
-              </button>
-              <button className="pill-btn pill-btn-secondary" onClick={() => { setActiveAsset(null); navigateTo('history'); }} style={{ flex: 1, minWidth: 100 }}>
-                <History size={16} /> History
-              </button>
-            </div>
-            {activeAsset === 'COOPTOKEN' && (
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 10, textAlign: 'center' }}>
-                Coopoint is earned through mining — it cannot be sent directly to other users. Swap to Coopcoin to transfer.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Notification Modal Drawer */}
       <NotificationDrawer 

@@ -32,7 +32,7 @@ create table if not exists public.wallets (
 -- ----------------------------------------------------------
 create table if not exists public.admin_settings (
   id text primary key default 'default',
-  base_mining_rate numeric(20, 4) not null default 50.0000,
+  base_mining_rate numeric(20, 4) not null default 8.3333, -- 8.3333/h x 12h = 100 Coopoint per day
   daily_mining_hours numeric(6, 2) not null default 12.00,
   points_per_coop numeric(20, 4) not null default 10.0000,
   daily_conversion_limit_points numeric(20, 4) not null default 50000.0000,
