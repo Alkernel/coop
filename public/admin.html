@@ -811,7 +811,7 @@ function renderSettings() {
   rpc( 'rpc_get_settings').then(function (s) {
     var tiers = JSON.stringify(s.boost_tiers || [], null, 2);
     var h = '<div class="card"><div class="card-title">Mining</div>';
-    h += field( 'base-mining-rate', 'Base mining rate (Coopoint/hour, 8.3333 = 100/day)', s.base_mining_rate);
+    h += field( 'base-mining-rate', 'Base mining rate (Coopoint/hour, e.g. 100)', s.base_mining_rate);
     h += field( 'daily-mining-hours', 'Daily mining hours', s.daily_mining_hours);
     h += toggleField( 'mining-enabled', 'Mining enabled', s.mining_enabled);
     h += '</div>';

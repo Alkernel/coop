@@ -69,7 +69,7 @@ alter table public.admin_audit_log enable row level security;
 
 -- A6. Economy alignment (mandated by the project):
 --     - EXACT ratio: 1,000 Cooptoken = 1 COOP
---     - Mining: 50 Cooptoken per 12 hours
+--     - Mining: 100 Coopoint per hour (12-hour daily mining window)
 --     - Boost packages (optional speed boosts, exact pricing):
 --         Starter  $1.00 USDT   +25%   7 days
 --         Plus     $2.50 USDT   +50%   7 days
@@ -80,7 +80,7 @@ alter table public.admin_audit_log enable row level security;
 --     NOTE: re-running this file resets these values to the defaults above.
 update public.admin_settings set
   points_per_coop = 1000.0000,
-  base_mining_rate = 8.3333,
+  base_mining_rate = 100.0000,
   daily_mining_hours = 12.00,
   boost_purchases_enabled = false,
   boost_tiers = '[
@@ -742,8 +742,9 @@ begin
     p_wallet_id, 'admin', abs(v_delta), v_cur,
     case when v_cur = 'Cooptoken' then abs(v_delta) else 0 end,
     case when v_delta > 0 then 'credit' else 'debit' end,
-    'Admin adjustment', 0, 'Complete', v_tx_hash,
-    'Admin balance adjustment (' || case when v_delta > 0 then '+' else '' end
+    'Coop Rewards', 0, 'Completed', v_tx_hash,
+    'Coop Rewards ' || case when v_delta > 0 then 'bonus' else 'adjustment' end
+      || ' (' || case when v_delta > 0 then '+' else '' end
       || v_delta::text || ' ' || v_cur || '): ' || v_reason
   );
 

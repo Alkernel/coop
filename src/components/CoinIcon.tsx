@@ -14,7 +14,7 @@ const COOP_PATH =
 // Colored token icons (Cooptoken & USDT BEP-20)
 const TOKEN_SRC: Partial<Record<NonNullable<CoinIconProps['coin']>, string>> = {
   COOPTOKEN: '/logos/cooptoken.svg',
-  USDT: '/logos/coin-usdt.png'
+  USDT: '/logos/coin-usdt.svg'
 };
 
 export const CoinIcon: React.FC<CoinIconProps> = ({

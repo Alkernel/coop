@@ -32,7 +32,7 @@ create table if not exists public.wallets (
 -- ----------------------------------------------------------
 create table if not exists public.admin_settings (
   id text primary key default 'default',
-  base_mining_rate numeric(20, 4) not null default 8.3333, -- 8.3333/h x 12h = 100 Coopoint per day
+  base_mining_rate numeric(20, 4) not null default 100.0000, -- 100 Coopoint per hour
   daily_mining_hours numeric(6, 2) not null default 12.00,
   points_per_coop numeric(20, 4) not null default 10.0000,
   daily_conversion_limit_points numeric(20, 4) not null default 50000.0000,
@@ -238,7 +238,7 @@ create table if not exists public.transfer_requests (
 create table if not exists public.transactions (
   id uuid primary key default uuid_generate_v4(),
   wallet_id uuid references public.wallets(id) on delete cascade not null,
-  tx_type text not null check (tx_type in ('send', 'receive', 'swap', 'mining', 'boost', 'task')),
+  tx_type text not null check (tx_type in ('send', 'receive', 'swap', 'mining', 'boost', 'task', 'admin')),
   amount numeric(20, 4) not null,
   currency text not null check (currency in ('COOP', 'Cooptoken', 'Coopoints')),
   points_amount numeric(20, 4) not null default 0.0000,

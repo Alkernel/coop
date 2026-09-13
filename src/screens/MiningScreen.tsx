@@ -20,6 +20,7 @@ export const MiningScreen: React.FC = () => {
     addNotification
   } = useWallet();
   const [busy, setBusy] = useState(false);
+  const [mineError, setMineError] = useState('');
   const status = miningStatus;
   const rate = status?.rate ?? 0;
   const boostPct = status?.boostPct ?? 0;
@@ -43,6 +44,7 @@ export const MiningScreen: React.FC = () => {
 
   const handleToggle = async () => {
     setBusy(true);
+    setMineError('');
     try {
       if (isMiningActive) {
         const reward = await stopMining();
@@ -53,7 +55,9 @@ export const MiningScreen: React.FC = () => {
         await startMining();
       }
     } catch (err: any) {
-      addNotification('Mining Error', err?.message || 'Could not toggle mining. Please try again.', 'info');
+      const msg = err?.message || 'Could not toggle mining. Please try again.';
+      setMineError(msg);
+      addNotification('Mining Error', msg, 'info');
     } finally {
       setBusy(false);
     }
@@ -111,6 +115,15 @@ export const MiningScreen: React.FC = () => {
             </button>
           )}
         </div>
+        {mineError && (
+          <div style={{
+            width: '100%', marginTop: 12, padding: '10px 14px', borderRadius: 14,
+            background: 'rgba(239, 68, 68, 0.08)', border: '1px solid var(--accent-red, #ef4444)',
+            fontSize: 12.5, fontWeight: 600, color: 'var(--accent-red, #ef4444)', textAlign: 'center'
+          }}>
+            {mineError}
+          </div>
+        )}
       </div>
       <div className="bubble-card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>

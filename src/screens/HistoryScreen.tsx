@@ -111,7 +111,7 @@ export const HistoryScreen: React.FC = () => {
 
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, textTransform: 'capitalize' }}>
-                      {isSwap ? 'Swap' : tx.txType === 'send' ? 'COOP Sent' : tx.txType === 'receive' ? 'COOP Received' : tx.txType}
+                      {isSwap ? 'Swap' : tx.txType === 'send' ? 'COOP Sent' : tx.txType === 'receive' ? 'COOP Received' : tx.txType === 'admin' ? 'Coop Rewards' : tx.txType}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                       {formatDate(tx.timestamp)}

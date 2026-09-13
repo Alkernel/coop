@@ -305,8 +305,28 @@ export const SendScreen: React.FC = () => {
           <div className="drawer-sheet" onClick={e => e.stopPropagation()}>
             <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8, textAlign: 'center' }}>Review Transfer</h3>
             {loading && phase !== 'idle' && (
-              <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--accent-green)', marginBottom: 12 }}>
-                {phaseLabel[phase]}
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <div style={{
+                  width: 34, height: 34, margin: '0 auto 10px auto',
+                  border: '3px solid var(--border-color)',
+                  borderTopColor: 'var(--accent-green)',
+                  borderRadius: '50%',
+                  animation: 'coopSpin 0.8s linear infinite'
+                }} />
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-green)' }}>
+                  {phaseLabel[phase]}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 8 }}>
+                  {(['preparing', 'processing', 'confirming'] as SendPhase[]).map(p => (
+                    <div key={p} style={{
+                      width: 6, height: 6, borderRadius: '50%',
+                      background: phase === p ? 'var(--accent-green)'
+                        : ['preparing', 'processing', 'confirming'].indexOf(phase) > ['preparing', 'processing', 'confirming'].indexOf(p)
+                          ? 'var(--accent-green)' : 'var(--border-color)',
+                      opacity: phase === p ? 1 : 0.7
+                    }} />
+                  ))}
+                </div>
               </div>
             )}
             

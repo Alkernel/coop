@@ -398,6 +398,11 @@ body {
 }
 
 /* Mining Radar Animations */
+/* Transaction send spinner */
+@keyframes coopSpin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes radarPulse {
   0% {
     transform: scale(0.94);

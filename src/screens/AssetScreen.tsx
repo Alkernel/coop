@@ -104,7 +104,7 @@ export const AssetScreen: React.FC = () => {
         ) : assetTxs.slice(0, 20).map((t: Transaction) => (
           <div key={t.id} className="bubble-card" style={{ padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'capitalize' }}>{t.txType}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'capitalize' }}>{t.txType === 'admin' ? 'Coop Rewards' : t.txType}</div>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                 {new Date(t.timestamp).toLocaleDateString()} · {t.status}
               </div>
