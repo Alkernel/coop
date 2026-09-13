@@ -496,8 +496,10 @@ begin
 
   v_hours := public._hours_mined_today(p_wallet_id);
   v_remaining_hours := v_settings.daily_mining_hours - v_hours;
-  if v_remaining_hours <= 0 then
-    raise exception 'Daily mining limit reached. Mining resets at 00:00 UTC';
+  -- Every session is a FIXED full 12-hour countdown. The user may run two
+  -- sessions per UTC day (12h + 12h) and can only claim after the countdown ends.
+  if v_remaining_hours < 12 then
+    raise exception 'Daily mining limit reached. A full 12-hour session no longer fits today. Mining resets at 00:00 UTC';
   end if;
 
   v_boost := public._active_boost_pct(p_wallet_id, v_settings.boosts_stackable);
@@ -507,7 +509,7 @@ begin
   ) values (
     p_wallet_id,
     now(),
-    now() + (v_remaining_hours * interval '1 hour'),
+    now() + interval '12 hours',
     v_settings.base_mining_rate,
     v_boost,
     'mining'
@@ -517,8 +519,8 @@ begin
 end;
 $$;
 
--- D. Stop mining & claim (reward computed entirely server-side)
-create or replace function public.rpc_stop_mining(p_wallet_id uuid)
+-- D. Claim mining reward (server-clock gated: full 12h countdown must be done)
+create or replace function public.rpc_claim_mining(p_wallet_id uuid)
 returns jsonb
 language plpgsql
 security definer
@@ -526,7 +528,7 @@ as $$
 declare
   v_wallet public.wallets%rowtype;
   v_session public.mining_sessions%rowtype;
-  v_elapsed_hours numeric;
+  v_hours numeric;
   v_reward numeric;
   v_tx_hash text;
 begin
@@ -536,13 +538,16 @@ begin
   for update;
 
   if not found then
-    raise exception 'No active mining session';
+    raise exception 'No active mining session. Press Start Mining first.';
   end if;
 
-  -- Server clock is authoritative; client time is never used
-  v_elapsed_hours := greatest(0,
-    extract(epoch from (least(now(), v_session.end_time) - v_session.start_time)) / 3600.0);
-  v_reward := round(v_elapsed_hours * v_session.base_rate * (1 + v_session.boost_pct / 100.0), 4);
+  -- Server clock is authoritative: NO early stop-and-claim bypass.
+  if now() < v_session.end_time then
+    raise exception 'Mining in progress. Wait for the countdown to finish before claiming.';
+  end if;
+
+  v_hours := extract(epoch from (v_session.end_time - v_session.start_time)) / 3600.0;
+  v_reward := round(v_hours * v_session.base_rate * (1 + v_session.boost_pct / 100.0), 4);
 
   if v_reward <= 0 then
     raise exception 'Nothing to claim yet';
@@ -550,7 +555,7 @@ begin
 
   update public.mining_sessions
   set status = 'completed',
-      credited_hours = round(v_elapsed_hours, 4),
+      credited_hours = round(v_hours, 4),
       reward_amount = v_reward
   where id = v_session.id;
 
@@ -571,8 +576,8 @@ begin
     0,
     'Complete',
     v_tx_hash,
-    'Mining reward: ' || round(v_elapsed_hours, 2) || 'h at ' || v_session.base_rate::text ||
-      ' Coopoints/hour (boost +' || v_session.boost_pct::text || '%)'
+    'Mining claim: ' || round(v_hours, 2) || 'h session at ' || v_session.base_rate::text ||
+      ' Coopoint/hour (boost +' || v_session.boost_pct::text || '%)'
   );
 
   return jsonb_build_object(
@@ -581,6 +586,17 @@ begin
     'reward', v_reward,
     'tx_hash', v_tx_hash
   );
+end;
+$$
+
+-- Backward-compatible: old clients calling "stop" go through the same claim gate.
+create or replace function public.rpc_stop_mining(p_wallet_id uuid)
+returns jsonb
+language plpgsql
+security definer
+as $$
+begin
+  return public.rpc_claim_mining(p_wallet_id);
 end;
 $$;
 
@@ -1017,6 +1033,7 @@ grant execute on function public.rpc_authenticate_wallet(text, text) to anon, au
 grant execute on function public.rpc_mining_status(uuid) to anon, authenticated;
 grant execute on function public.rpc_start_mining(uuid) to anon, authenticated;
 grant execute on function public.rpc_stop_mining(uuid) to anon, authenticated;
+grant execute on function public.rpc_claim_mining(uuid) to anon, authenticated;
 grant execute on function public.rpc_execute_swap(uuid, text, numeric, text) to anon, authenticated;
 grant execute on function public.rpc_get_settings() to anon, authenticated;
 grant execute on function public.rpc_admin_set_settings(text, jsonb) to anon, authenticated;

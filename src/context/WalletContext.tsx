@@ -21,6 +21,7 @@ interface WalletContextType {
   account: WalletAccount | null;
   isAuthenticated: boolean;
   isLocked: boolean;
+  booting: boolean;
   
   miningStatus: MiningStatus | null;
   miningRemainingMs: number;
@@ -49,6 +50,7 @@ interface WalletContextType {
   // Actions
   startMining: () => Promise<void>;
   stopMining: () => Promise<number>;
+  claimMining: () => Promise<number>;
   executeSwap: (direction: SwapDirection, amount: number) => Promise<{ points: number; coop: number; txHash: string }>;
   executeSend: (recipient: string, amount: number, memo?: string) => Promise<{ fee: number; status: string; txHash: string; recipientAddress: string; amount: number }>;
   openTransaction: (tx: Transaction) => void;
@@ -66,6 +68,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [screenHistory, setScreenHistory] = useState<ScreenName[]>(['welcome']);
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [isLocked, setIsLocked] = useState<boolean>(false);
+  const [booting, setBooting] = useState<boolean>(true);
   const [miningStatus, setMiningStatus] = useState<MiningStatus | null>(null);
   const [miningRemainingMs, setMiningRemainingMs] = useState<number>(0);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -132,9 +135,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Restore session from the stored private key (balances come from the server,
   // never from localStorage)
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured) { setBooting(false); return; }
     const storedKey = localStorage.getItem('coop_private_key');
-    if (!storedKey) return;
+    if (!storedKey) { setBooting(false); return; }
     (async () => {
       try {
         const acc = await dbService.authenticate(storedKey, false);
@@ -150,6 +153,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       } catch (e) {
         console.warn('Session restore failed:', e);
         localStorage.removeItem('coop_private_key');
+      } finally {
+        setBooting(false);
       }
     })();
   }, []);
@@ -276,6 +281,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return res.reward;
   };
 
+  // Claim a FINISHED countdown session. The server enforces the 12h gate.
+  const claimMining = async (): Promise<number> => {
+    if (!account) return 0;
+    const res = await dbService.claimMining(account);
+    setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
+    await refreshMiningStatus(account.id);
+    setTransactions(await dbService.getTransactions(account.id));
+    addNotification('Mining Claimed', `+${res.reward} Coopoint credited to your balance.`, 'success');
+    return res.reward;
+  };
+
   // --- Swap Handlers (validated & executed server-side) ---
   const executeSwap = async (direction: SwapDirection, amount: number): Promise<{ points: number; coop: number; txHash: string }> => {
     if (!account) throw new Error('No active wallet');
@@ -353,6 +369,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         account,
         isAuthenticated: Boolean(account),
         isLocked,
+        booting,
         miningStatus,
         miningRemainingMs,
         isMiningActive,
@@ -374,6 +391,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         unlockWallet,
         startMining,
         stopMining,
+        claimMining,
         executeSwap,
         executeSend,
         purchaseBoost,

@@ -138,6 +138,7 @@
         <a data-page="users" onclick="showSection('users')">Users</a>
         <a data-page="wallets" onclick="showSection('wallets')">Wallets</a>
         <a data-page="transactions" onclick="showSection('transactions')">Transactions</a>
+        <a data-page="support" onclick="showSection('support')">Support Chat</a>
         <div class="navgroup">Economy</div>
         <a data-page="coop" onclick="showSection('coop')">Coopoint / COOP</a>
         <a data-page="swap" onclick="showSection('swap')">Swap</a>
@@ -159,6 +160,7 @@
       <section class="section" id="sec-users"><div id="body-users"></div></section>
       <section class="section" id="sec-wallets"><div id="body-wallets"></div></section>
       <section class="section" id="sec-transactions"><div id="body-transactions"></div></section>
+      <section class="section" id="sec-support"><div id="body-support"></div></section>
       <section class="section" id="sec-coop"><div id="body-coop"></div></section>
       <section class="section" id="sec-swap"><div id="body-swap"></div></section>
       <section class="section" id="sec-mining"><div id="body-mining"></div></section>
@@ -264,6 +266,7 @@ const PAGE_META = {
   users: ['Users', 'Every wallet account (identified by its generated key/address). Click a row to open the full wallet activity'],
   wallets: ['Wallets', 'Wallet balances and activity across the network (no private secrets shown)'],
   transactions: ['Transactions', 'Full send / receive / swap / mining / boost / task activity - internal wallet activity only'],
+  support: ['Support Chat', 'Live user <-> admin conversations. Reply to tickets and watch online / typing indicators'],
   coop: ['Coopoint / COOP', 'The pre-TGE economy: Coopoint mined / claimed / swapped + the COOP reward pool'],
   swap: ['Swap', 'Coopoint <-> COOP conversions at the configured ratio (points-per-COOP from admin settings)'],
   mining: ['Mining', 'Mining sessions, claims and rewards - from the wallet mining tables'],
@@ -312,6 +315,7 @@ async function signIn() {
     var isAdmin = await rpc( 'rpc_is_admin');
     if (!isAdmin) throw new Error( 'Account not in admin_users. Grant access first (see setup below)  or use the Admin Key.', true);
     usingKey = false;
+    try { sessionStorage.setItem( 'coop_admin_mode', 'auth'); sessionStorage.removeItem( 'coop_admin_key'); } catch ( e) {}
     openPanel();
   } catch (err) {
     showMsg( 'login-msg', 'Sign-in failed: ' + (err.message || 'invalid credentials'), true);
@@ -328,6 +332,7 @@ async function signInWithKey() {
     if (!ok) throw new Error( 'Invalid admin key.' );
     usingKey = true;
     latestKey = key;
+    try { sessionStorage.setItem( 'coop_admin_mode', 'key'); sessionStorage.setItem( 'coop_admin_key', key); } catch ( e) {}
     openPanel();
   } catch (err) {
     showMsg( 'login-msg', 'Sign-in failed: ' + (err.message || ''), true);
@@ -341,8 +346,7 @@ function openPanel() {
 }
 function signOut() {
   if (!usingKey) { try { getClient().auth.signOut(); } catch (e) {} }
-  usingKey = false;
-  latestKey = null;
+  clearAdminSession();
   cache = {};
   $( 'panel').classList.add( 'hide');
   $( 'login-zone').classList.remove( 'hide');
@@ -353,6 +357,7 @@ const loaders = {
   users: renderUsers,
   wallets: renderWallets,
   transactions: renderTransactions,
+  support: renderSupport,
   coop: renderCoop,
   swap: renderSwap,
   mining: renderMining,
@@ -951,5 +956,150 @@ async function rotateAdminKey() {
     showMsg( 'security-msg', 'Admin key updated (hashed).', false);
   } catch (err) { showMsg( 'security-msg', 'Failed: ' + (err.message || ''), true); }
 }
+/* ---------- SUPPORT CHAT (user <-> admin, persisted in Supabase) ---------- */
+var SUPPORT_TICKET = null;
+var SUPPORT_POLL = null;
+
+function renderSupport() {
+  var el = $( 'body-support');
+  el.innerHTML = '<div class="tag">Loading conversations...</div>';
+  return rpc( 'rpc_support_admin_list', { p_admin_key: null }).then(function (rows) {
+    rows = rows || [];
+    var h = '<div class="card"><div class="card-title">Support tickets (' + rows.length + ')</div>';
+    h += '<div class="hint" style="margin-bottom:12px">User &lt;-&gt; admin chat stored in Supabase. Open a ticket to read the thread, see if the user is online / typing, and reply live.</div>';
+    h += '<div class="table-wrap"><table><thead><tr><th>Ticket</th><th>User</th><th>Subject</th><th>Status</th><th>Unread</th><th>Last message</th><th>Preview</th></tr></thead><tbody>';
+    if (!rows.length) h += '<tr><td colspan="7">No support conversations yet</td></tr>';
+    else rows.forEach(function (t) {
+      h += '<tr class="clickable" onclick="openSupportTicket(\'' + t.id + '\')">';
+      h += '<td class="mono" style="font-size:11px">' + shortAddr(t.id) + '</td>';
+      h += '<td>' + esc(t.name || 'User') + '<div class="mono" style="font-size:10px">' + shortAddr(t.address || t.wallet_id) + '</div></td>';
+      h += '<td>' + esc(t.subject || '') + '</td><td>' + pill(t.status) + '</td>';
+      h += '<td>' + ((t.unread_for_admin || 0) > 0 ? '<span class="pill red">' + t.unread_for_admin + ' new</span>' : '<span class="pill gray">0</span>') + '</td>';
+      h += '<td style="font-size:11px">' + fmtDate(t.last_message_at) + '</td>';
+      h += '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">' + esc(t.preview || '') + '</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+    el.innerHTML = h;
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + ' <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="renderSupport()">Retry</button></div>';
+  });
+}
+
+function openSupportTicket(id) {
+  if (SUPPORT_POLL) { clearInterval(SUPPORT_POLL); SUPPORT_POLL = null; }
+  SUPPORT_TICKET = id;
+  var el = $( 'body-support');
+  el.innerHTML = '<div class="toolbar"><button class="btn btn-secondary btn-sm" onclick="closeSupportView()">&larr; Back to tickets</button></div><div class="tag">Opening conversation...</div>';
+  return rpc( 'rpc_support_admin_poll', { p_admin_key: null, p_ticket_id: id }).then(function (d) {
+    renderSupportThread(d);
+    if (!SUPPORT_POLL) SUPPORT_POLL = setInterval(adminPollSupport, 3000);
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') + '</div>';
+  });
+}
+
+function closeSupportView() {
+  if (SUPPORT_POLL) { clearInterval(SUPPORT_POLL); SUPPORT_POLL = null; }
+  SUPPORT_TICKET = null;
+  renderSupport();
+}
+
+function adminPollSupport() {
+  if (!SUPPORT_TICKET) return;
+  rpc( 'rpc_support_admin_poll', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET }).then(function (d) {
+    renderSupportThread(d);
+  }).catch(function () {});
+}
+
+function renderSupportThread(d) {
+  var el = $( 'body-support');
+  if (!el) return;
+  var t = d.ticket || {};
+  var userOnline = !!d.user_online;
+  var userTyping = !!d.user_typing;
+  var msgs = d.messages || [];
+  var h = '<div class="toolbar"><button class="btn btn-secondary btn-sm" onclick="closeSupportView()">&larr; Back to tickets</button>';
+  if (t.status !== 'closed') h += '<button class="btn btn-sm" style="margin-left:6px;background:var(--accent-red);color:#fff" onclick="closeTicket()">Close ticket</button>';
+  h += '</div>';
+  h += '<div class="card"><div class="card-title">Conversation <span class="mono" style="font-size:11px;font-weight:400">' + shortAddr(t.id) + '</span></div>';
+  h += '<div class="kv"><span class="k">User</span><span class="v">' + esc(t.name || 'User') + ' <span class="mono">' + shortAddr(t.wallet_id) + '</span></span></div>';
+  h += '<div class="kv"><span class="k">Email</span><span class="v">' + esc(t.email || '-') + '</span></div>';
+  h += '<div class="kv"><span class="k">Subject</span><span class="v">' + esc(t.subject || '') + '</span></div>';
+  h += '<div class="kv"><span class="k">Status</span><span class="v">' + pill(t.status) + ' <span style="font-size:11px">' + (userOnline ? '<span style="color:var(--accent-green)">● user online</span>' : '○ user offline') + (userTyping ? ' <span style="color:var(--accent-amber)">- typing...</span>' : '') + '</span></span></div>';
+  h += '</div>';
+  h += '<div class="card"><div class="card-title">Messages</div><div id="support-thread" style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding:4px 2px">';
+  if (!msgs.length) h += '<div class="tag">No messages yet</div>';
+  msgs.forEach(function (m) {
+    var isAdmin = m.sender === 'admin';
+    var label = isAdmin ? 'You' : 'User';
+    h += '<div style="display:flex;justify-content:' + (isAdmin ? 'flex-end' : 'flex-start') + '">';
+    h += '<div style="max-width:75%;padding:8px 12px;border-radius:14px;background:' + (isAdmin ? 'var(--accent-green)' : 'var(--bg-surface)') + ';color:' + (isAdmin ? '#fff' : 'var(--text-primary)') + ';font-size:13px;line-height:1.45">';
+    h += '<div style="white-space:pre-wrap;word-break:break-word">' + esc(m.body) + '</div>';
+    h += '<div style="font-size:10px;opacity:.8;margin-top:3px">' + label + ' - ' + fmtDate(m.created_at) + '</div>';
+    h += '</div></div>';
+  });
+  h += '</div>';
+  h += '<div class="field" style="margin-top:12px"><label>Reply as admin</label><textarea id="support-reply" rows="3" style="width:100%;resize:vertical" placeholder="Type a reply..."></textarea></div>';
+  h += '<div class="btn-row"><button class="btn" onclick="sendAdminReply()" id="support-send-btn">Send Reply</button></div>';
+  h += '<div id="support-msg" class="msg"></div></div>';
+  el.innerHTML = h;
+  var thr = $( 'support-thread'); if (thr) thr.scrollTop = thr.scrollHeight;
+}
+
+function sendAdminReply() {
+  var box = $( 'support-reply');
+  if (!box || !SUPPORT_TICKET) return;
+  var body = box.value.trim();
+  if (!body) { showMsg( 'support-msg', 'Write a reply first', true); return; }
+  var btn = $( 'support-send-btn'); if (btn) btn.disabled = true;
+  rpc( 'rpc_support_admin_reply', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET, p_body: body }).then(function () {
+    box.value = '';
+    showMsg( 'support-msg', 'Reply sent. The user sees it in their app instantly.', false);
+    return adminPollSupport();
+  }).catch(function (err) {
+    showMsg( 'support-msg', 'Failed: ' + (err.message || ''), true);
+  }).finally(function () { if (btn) btn.disabled = false; });
+}
+
+function closeTicket() {
+  if (!SUPPORT_TICKET) return;
+  rpc( 'rpc_support_admin_close', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET }).then(function () {
+    toast('Ticket closed.');
+    return adminPollSupport();
+  }).catch(function (err) { toast('Failed to close: ' + (err.message || ''), true); });
+}
+/* ---------- SESSION RESTORE (refresh keeps you logged in) ---------- */
+function restoreAdminSession() {
+  var mode = null;
+  try { mode = sessionStorage.getItem( 'coop_admin_mode') || null; } catch ( e) {}
+  if (mode === 'key') {
+    var key = null;
+    try { key = sessionStorage.getItem( 'coop_admin_key') || null; } catch ( e) {}
+    if (!key) return;
+    usingKey = true; latestKey = key;
+    rpc( 'rpc_verify_admin_key', { p_admin_key: key }).then(function (ok) {
+      if (ok) openPanel();
+      else clearAdminSession();
+    }).catch(function () { clearAdminSession(); });
+  } else if (mode === 'auth') {
+    getClient().auth.getSession().then(function (s) {
+      if (s && s.data && s.data.session) {
+        rpc( 'rpc_is_admin').then(function (isAdmin) {
+          if (isAdmin) openPanel();
+        }).catch(function () {});
+      }
+    }).catch(function () {});
+  }
+}
+function clearAdminSession() {
+  usingKey = false;
+  latestKey = null;
+  try { sessionStorage.removeItem( 'coop_admin_mode'); sessionStorage.removeItem( 'coop_admin_key'); } catch ( e) {}
+}
+function onReady(fn) {
+  if (document.readyState === 'loading') document.addEventListener( 'DOMContentLoaded', fn);
+  else fn();
+}
+onReady(function () { restoreAdminSession(); });
 </script>
 </body>

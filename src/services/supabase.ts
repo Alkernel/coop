@@ -177,6 +177,18 @@ class DatabaseService {
     };
   }
 
+  // Claim the completed mining session. The server refuses to pay out until
+  // the full 12h countdown has finished (no early stop-and-claim bypass).
+  async claimMining(wallet: WalletAccount): Promise<{ wallet: WalletAccount; reward: number }> {
+    const sb = this.assertSupabase();
+    const { data, error } = await sb.rpc('rpc_claim_mining', { p_wallet_id: wallet.id });
+    if (error) throw new Error(error.message);
+    return {
+      wallet: this.walletFromDb(data.wallet, wallet.privateKey),
+      reward: Number(data.reward ?? 0)
+    };
+  }
+
   // --- 3b. BOOSTS (server-gated by admin_settings.boost_purchases_enabled) ---
   async purchaseBoost(
     walletId: string,
@@ -310,6 +322,59 @@ class DatabaseService {
       wallet: this.walletFromDb(data.wallet, wallet.privateKey),
       reward: Number(data.task_reward ?? 0)
     };
+  }
+
+  // --- 8. SUPPORT CHAT (user <-> admin, persisted in Supabase) ---
+  async openSupportTicket(
+    walletId: string, name: string, email: string, subject: string, message: string
+  ): Promise<string> {
+    const sb = this.assertSupabase();
+    const { data, error } = await sb.rpc('rpc_support_open_ticket', {
+      p_wallet_id: walletId, p_name: name, p_email: email,
+      p_subject: subject, p_message: message
+    });
+    if (error || !data) throw new Error(error?.message || 'Could not start the conversation');
+    return data.id;
+  }
+
+  async sendSupportMessage(ticketId: string, walletId: string, body: string): Promise<void> {
+    const sb = this.assertSupabase();
+    const { error } = await sb.rpc('rpc_support_send', {
+      p_ticket_id: ticketId, p_wallet_id: walletId, p_body: body
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async pollSupport(ticketId: string, walletId: string): Promise<{
+    messages: { id: string; sender: 'user' | 'admin'; body: string; createdAt: number }[];
+    adminOnline: boolean;
+    adminTyping: boolean;
+    status: string;
+    adminLastSeenAt: number | null;
+  }> {
+    const sb = this.assertSupabase();
+    const { data, error } = await sb.rpc('rpc_support_poll', {
+      p_ticket_id: ticketId, p_wallet_id: walletId
+    });
+    if (error || !data) throw new Error(error?.message || 'Conversation not found');
+    return {
+      messages: (data.messages || []).map((m: any) => ({
+        id: m.id, sender: m.sender, body: m.body, createdAt: new Date(m.created_at).getTime()
+      })),
+      adminOnline: Boolean(data.admin_online),
+      adminTyping: Boolean(data.admin_typing),
+      status: data.ticket?.status || 'open',
+      adminLastSeenAt: data.ticket?.admin_last_seen_at
+        ? new Date(data.ticket.admin_last_seen_at).getTime() : null
+    };
+  }
+
+  async supportTyping(ticketId: string, walletId: string): Promise<void> {
+    const sb = this.assertSupabase();
+    const { error } = await sb.rpc('rpc_support_typing', {
+      p_ticket_id: ticketId, p_wallet_id: walletId, p_admin_key: null
+    });
+    if (error) throw new Error(error.message);
   }
 }
 

@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { ChevronLeft, Zap, ChevronRight, CheckCircle2, Clock, Ban, TimerReset, Coins } from 'lucide-react';
 import { CoopLogo } from '../components/CoopLogo';
 import { useWallet } from '../context/WalletContext';
@@ -16,7 +16,7 @@ export const MiningScreen: React.FC = () => {
     isMiningActive,
     dailyLimitReached,
     startMining,
-    stopMining,
+    claimMining,
     addNotification
   } = useWallet();
   const [busy, setBusy] = useState(false);
@@ -28,6 +28,12 @@ export const MiningScreen: React.FC = () => {
   const hoursToday = status?.hoursMinedToday ?? 0;
   const pointsToday = status?.pointsEarnedToday ?? 0;
   const dailyHours = status?.dailyHours ?? 12;
+  const session = miningStatus?.session ?? null;
+  // A session whose server countdown has finished but has not been claimed yet.
+  const hasPendingClaim = Boolean(session && session.status === 'mining' && miningRemainingMs <= 0);
+  const sessionReward = hasPendingClaim && session
+    ? Math.max(0, ((session.endTime - session.startTime) / 3600000) * (session.baseRate ?? rate) * (1 + boostPct / 100))
+    : 0;
 
   const formatTime = (ms: number) => {
     const totalSecs = Math.max(0, Math.floor(ms / 1000));
@@ -42,20 +48,13 @@ export const MiningScreen: React.FC = () => {
     return d.toISOString().slice(11, 16) + ' UTC';
   };
 
-  const handleToggle = async () => {
+  const handleStart = async () => {
     setBusy(true);
     setMineError('');
     try {
-      if (isMiningActive) {
-        const reward = await stopMining();
-        if (reward > 0) {
-          confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
-        }
-      } else {
-        await startMining();
-      }
+      await startMining();
     } catch (err: any) {
-      const msg = err?.message || 'Could not toggle mining. Please try again.';
+      const msg = err?.message || 'Could not start mining. Please try again.';
       setMineError(msg);
       addNotification('Mining Error', msg, 'info');
     } finally {
@@ -63,9 +62,22 @@ export const MiningScreen: React.FC = () => {
     }
   };
 
-  const unclaimedEstimate = isMiningActive
-    ? Math.min(miningRemainingMs / 3600000, Math.max(0, dailyHours - hoursToday)) * effectiveRate
-    : 0;
+  const handleClaim = async () => {
+    setBusy(true);
+    setMineError('');
+    try {
+      const reward = await claimMining();
+      if (reward > 0) {
+        confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'Could not claim your mining reward. Please try again.';
+      setMineError(msg);
+      addNotification('Mining Error', msg, 'info');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="screen-content" style={{ paddingBottom: 16 }}>
@@ -84,16 +96,22 @@ export const MiningScreen: React.FC = () => {
         </div>
         <div style={{ marginTop: 24, textAlign: 'center' }}>
           <h2 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.3px', marginBottom: 6 }}>
-            {dailyLimitReached ? 'Daily Limit Reached' : isMiningActive ? 'You are mining!' : 'Mining Paused'}
+            {dailyLimitReached ? 'Daily Limit Reached' : hasPendingClaim ? 'Session Complete' : isMiningActive ? 'You are mining!' : 'Mining Paused'}
           </h2>
           <p style={{ fontSize: 14, color: 'var(--text-secondary)', fontWeight: 600 }}>
             {fmt(effectiveRate, 1)} Point/hour
             {boostPct > 0 && <span style={{ color: 'var(--accent-green)' }}> (base {fmt(rate)} + boost +{fmt(boostPct)}%)</span>}
           </p>
-          {isMiningActive && (
+          {isMiningActive && miningRemainingMs > 0 && (
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10, background: 'var(--bg-glass-active)', padding: '6px 14px', borderRadius: 9999, border: '1px solid var(--border-color)', fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
               <Clock size={14} />
               <span>{formatTime(miningRemainingMs)}</span>
+            </div>
+          )}
+          {hasPendingClaim && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10, background: 'rgba(34, 197, 94, 0.12)', padding: '6px 14px', borderRadius: 9999, border: '1px solid var(--accent-green)', fontSize: 13, fontWeight: 700, color: 'var(--accent-green)' }}>
+              <CheckCircle2 size={14} />
+              <span>Session complete — ready to claim</span>
             </div>
           )}
         </div>
@@ -103,13 +121,18 @@ export const MiningScreen: React.FC = () => {
               <Ban size={18} />
               {status && !status.miningEnabled ? 'Mining is currently disabled' : "Daily limit reached - resets " + (status ? formatReset(status.nextResetUtc) : 'at 00:00 UTC')}
             </button>
-          ) : isMiningActive ? (
-            <button className="pill-btn pill-btn-primary" onClick={handleToggle} disabled={busy} id="mining-stop-btn" style={{ background: 'var(--accent-green)', color: '#ffffff' }}>
+          ) : hasPendingClaim ? (
+            <button className="pill-btn pill-btn-primary" onClick={handleClaim} disabled={busy} id="mining-claim-btn" style={{ background: 'var(--accent-green)', color: '#ffffff' }}>
               <CheckCircle2 size={18} />
-              {busy ? 'Stopping...' : 'Stop & Claim ' + fmt(unclaimedEstimate) + ' Point'}
+              {busy ? 'Claiming...' : 'Claim ' + fmt(sessionReward) + ' Point'}
+            </button>
+          ) : isMiningActive ? (
+            <button className="pill-btn pill-btn-primary" disabled style={{ opacity: 0.65 }} id="mining-countdown-btn">
+              <Clock size={18} />
+              Claim in {formatTime(miningRemainingMs)}
             </button>
           ) : (
-            <button className="pill-btn pill-btn-primary" onClick={handleToggle} disabled={busy} id="mining-start-btn">
+            <button className="pill-btn pill-btn-primary" onClick={handleStart} disabled={busy} id="mining-start-btn">
               <Zap size={18} />
               {busy ? 'Starting...' : 'START MINING'}
             </button>

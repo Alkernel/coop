@@ -23,7 +23,17 @@ import { AssetScreen } from './screens/AssetScreen';
 import { TxDetailScreen } from './screens/TxDetailScreen';
 
 export const App: React.FC = () => {
-  const { currentScreen } = useWallet();
+  const { currentScreen, booting } = useWallet();
+
+  // On refresh we restore the user's exact page from the server-backed session
+  // WITHOUT flashing the auth/welcome screen in between.
+  if (booting) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary, #000)', color: 'var(--text-tertiary, #777)', fontSize: 13, fontWeight: 600 }}>
+        Loading your wallet…
+      </div>
+    );
+  }
 
   const renderScreen = () => {
     switch (currentScreen) {
