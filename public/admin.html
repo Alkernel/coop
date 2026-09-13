@@ -1112,7 +1112,8 @@ function renderSupportThread(d) {
   h += '</div>';
   h += '<div class="card"><div class="card-title">Messages</div><div id="support-thread" style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding:4px 2px">' + supportMessagesHtml(d) + '</div>';
   h += '<div class="field" style="margin-top:12px"><label>Reply as admin</label><textarea id="support-reply" rows="3" style="width:100%;resize:vertical" placeholder="' + (closed ? 'Chat ended - tap Reopen to reply' : 'Type a reply...') + '"' + (closed ? ' readonly' : '') + '></textarea></div>';
-  h += '<div class="btn-row"><button class="btn" onclick="sendAdminReply()" id="support-send-btn"' + (closed ? ' disabled' : '') + '>Send Reply</button></div>';
+  h += '<div class="btn-row"><button class="btn" onclick="sendAdminReply()" id="support-send-btn"' + (closed ? ' disabled' : '') + '>Send Reply</button></div>' +
+    '<span id="support-admin-typing-indicator" style="display:none;font-size:11px;color:var(--accent-green);align-self:center;white-space:nowrap">● typing…</span>';
   h += '<div id="support-msg" class="msg"></div></div>';
   el.innerHTML = h;
   var thr = $( 'support-thread'); if (thr) thr.scrollTop = thr.scrollHeight;
@@ -1120,14 +1121,27 @@ function renderSupportThread(d) {
   if (box) box.addEventListener('input', supportAdminTyping);
 }
 
-// Debounced "admin is typing" ping so the user app shows a typing indicator.
-var _supportTypingSentAt = 0;
+// Local "you are typing" indicator state (driven by admin keystrokes, NOT the poll).
+var _adminTypingActive = false;
+var _adminTypingHideTimer = null;
+
 function supportAdminTyping() {
   if (!SUPPORT_TICKET) return;
   var now = Date.now();
   if (now - _supportTypingSentAt < 2500) return;
   _supportTypingSentAt = now;
+  _adminTypingActive = true;
   rpc( 'rpc_support_typing', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET }).catch(function () {});
+  // Show local "typing..." indicator for the admin.
+  var ind = $( 'support-admin-typing-indicator');
+  if (ind) ind.style.display = '';
+  // Hide the local indicator 2s after the last keystroke.
+  if (_adminTypingHideTimer) clearTimeout(_adminTypingHideTimer);
+  _adminTypingHideTimer = setTimeout(function () {
+    _adminTypingActive = false;
+    var _ind = $( 'support-admin-typing-indicator');
+    if (_ind) _ind.style.display = 'none';
+  }, 2000);
 }
 
 function sendAdminReply() {
