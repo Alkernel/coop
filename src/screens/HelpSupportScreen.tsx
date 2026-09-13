@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, HelpCircle, MessageSquare, AlertCircle, Send, Check, CheckCheck, Wifi, WifiOff, ExternalLink } from 'lucide-react';
+import { ChevronLeft, HelpCircle, MessageSquare, AlertCircle, Send, Check, CheckCheck, Wifi, WifiOff, ExternalLink, History, Trash2, RotateCcw, Star } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
 import { dbService } from '../services/supabase';
 
@@ -8,6 +8,19 @@ interface ChatMsg {
   sender: 'user' | 'admin';
   body: string;
   createdAt: number;
+}
+
+interface SupportTicketSummary {
+  id: string;
+  subject: string;
+  status: string;
+  lastMessageAt: number | null;
+  unread: number;
+  closedBy: 'user' | 'admin' | null;
+  closedAt: number | null;
+  rating: number | null;
+  preview: string;
+  messageCount: number;
 }
 
 const faqs = [
@@ -24,9 +37,29 @@ const faqs = [
 const fmtTime = (ts: number) =>
   new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+const fmtDateTime = (ts: number) =>
+  new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+const Stars = ({ count, onChange }: { count: number; onChange?: (v: number) => void }) => (
+  <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
+    {[1, 2, 3, 4, 5].map(s => (
+      <button
+        key={s}
+        type="button"
+        onClick={onChange ? () => onChange(s) : undefined}
+        style={{
+          fontSize: 22, lineHeight: 1, background: 'none', border: 'none', cursor: onChange ? 'pointer' : 'default',
+          padding: 2, color: s <= count ? 'var(--accent-amber, #f59e0b)' : 'var(--text-tertiary, #777)'
+        }}
+        aria-label={`${s} star${s > 1 ? 's' : ''}`}
+      >★</button>
+    ))}
+  </div>
+);
+
 export const HelpSupportScreen: React.FC = () => {
   const { goBack, account } = useWallet();
-  const [view, setView] = useState<'menu' | 'form' | 'chat'>('menu');
+  const [view, setView] = useState<'menu' | 'form' | 'chat' | 'history'>('menu');
   const [formType, setFormType] = useState<'contact' | 'report'>('contact');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -37,6 +70,14 @@ export const HelpSupportScreen: React.FC = () => {
   const [adminTyping, setAdminTyping] = useState(false);
   const [ticketStatus, setTicketStatus] = useState('open');
   const [adminLastSeenAt, setAdminLastSeenAt] = useState<number | null>(null);
+  const [closedBy, setClosedBy] = useState<'user' | 'admin' | null>(null);
+  const [closedAt, setClosedAt] = useState<number | null>(null);
+  const [rating, setRating] = useState<number | null>(null);
+  const [showEndPanel, setShowEndPanel] = useState(false);
+  const [rateStars, setRateStars] = useState(0);
+  const [rateComment, setRateComment] = useState('');
+  const [history, setHistory] = useState<SupportTicketSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -57,6 +98,9 @@ export const HelpSupportScreen: React.FC = () => {
         setAdminTyping(res.adminTyping);
         setTicketStatus(res.status);
         setAdminLastSeenAt(res.adminLastSeenAt);
+        setClosedBy(res.closedBy);
+        setClosedAt(res.closedAt);
+        setRating(res.rating);
       } catch (e) { /* transient poll failure - retry next tick */ }
     };
     poll();
@@ -80,6 +124,13 @@ export const HelpSupportScreen: React.FC = () => {
       const subject = formType === 'report' ? 'Report a Problem' : 'Support request';
       const id = await dbService.openSupportTicket(account.id, name.trim(), email.trim(), subject, body);
       setTicketId(id);
+      setTicketStatus('open');
+      setClosedBy(null);
+      setClosedAt(null);
+      setRating(null);
+      setShowEndPanel(false);
+      setRateStars(0);
+      setRateComment('');
       const res = await dbService.pollSupport(id, account.id);
       setMessages(res.messages);
       setView('chat');
@@ -116,6 +167,104 @@ export const HelpSupportScreen: React.FC = () => {
         lastTypingTs.current = now;
         dbService.supportTyping(ticketId, account.id).catch(() => {});
       }
+    }
+  };
+
+  const loadHistory = async () => {
+    if (!account) return;
+    setHistoryLoading(true);
+    setError('');
+    try {
+      setHistory(await dbService.mySupportTickets(account.id));
+    } catch (err: any) {
+      setError(err?.message || 'Could not load your chat history.');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const openHistoryChat = (t: SupportTicketSummary) => {
+    setTicketId(t.id);
+    setMessages([]);
+    setError('');
+    setShowEndPanel(false);
+    setRateStars(0);
+    setRateComment('');
+    setClosedBy(t.closedBy);
+    setClosedAt(t.closedAt);
+    setRating(t.rating);
+    setTicketStatus(t.status);
+    setView('chat');
+  };
+
+  const deleteHistory = async (id: string) => {
+    if (!account) return;
+    if (!window.confirm('Delete this conversation permanently? This cannot be undone.')) return;
+    try {
+      await dbService.deleteSupportChat(id, account.id);
+      if (ticketId === id) { setTicketId(null); setMessages([]); setView('history'); }
+      await loadHistory();
+    } catch (err: any) {
+      setError(err?.message || 'Could not delete the conversation.');
+    }
+  };
+
+  const endChat = async () => {
+    if (!ticketId || !account) return;
+    setSending(true);
+    setError('');
+    try {
+      await dbService.endSupportChat(ticketId, account.id, rateStars || null, rateComment.trim() || null);
+      setShowEndPanel(false);
+      const res = await dbService.pollSupport(ticketId, account.id);
+      setMessages(res.messages);
+      setTicketStatus(res.status);
+      setClosedBy(res.closedBy);
+      setClosedAt(res.closedAt);
+      setRating(res.rating);
+    } catch (err: any) {
+      setError(err?.message || 'Could not end the chat.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const submitRating = async () => {
+    if (!ticketId || !account) return;
+    if (!rateStars) { setError('Select a star rating first.'); return; }
+    setSending(true);
+    setError('');
+    try {
+      await dbService.rateSupportChat(ticketId, account.id, rateStars, rateComment.trim() || undefined);
+      setRateStars(0);
+      setRateComment('');
+      const res = await dbService.pollSupport(ticketId, account.id);
+      setRating(res.rating);
+    } catch (err: any) {
+      setError(err?.message || 'Could not submit your rating.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const continueChat = async () => {
+    if (!ticketId || !account) return;
+    setSending(true);
+    setError('');
+    try {
+      await dbService.reopenSupportChat(ticketId, account.id);
+      setRateStars(0);
+      setRateComment('');
+      const res = await dbService.pollSupport(ticketId, account.id);
+      setMessages(res.messages);
+      setTicketStatus(res.status);
+      setClosedBy(res.closedBy);
+      setClosedAt(res.closedAt);
+      setRating(res.rating);
+    } catch (err: any) {
+      setError(err?.message || 'Could not reopen the conversation.');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -169,6 +318,20 @@ export const HelpSupportScreen: React.FC = () => {
             <button className="pill-btn pill-btn-secondary" style={{ width: '100%' }}
               onClick={() => { setFormType('report'); setMessage(''); setError(''); setView('form'); }} id="btn-report-problem">
               <AlertCircle size={16} /><span style={{ marginLeft: 6 }}>Report a Problem</span>
+            </button>
+          </div>
+
+          <div className="bubble-card" style={{ padding: '16px 18px', marginBottom: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+              <History size={22} color="var(--text-primary)" />
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>Chat History</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Your past conversations — open, ended, rated or deleted</div>
+              </div>
+            </div>
+            <button className="pill-btn pill-btn-primary" style={{ width: '100%' }}
+              onClick={() => { setError(''); setView('history'); loadHistory(); }} id="btn-chat-history">
+              View Chat History
             </button>
           </div>
 
@@ -234,6 +397,62 @@ export const HelpSupportScreen: React.FC = () => {
         </div>
       )}
 
+      {view === 'history' && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="bubble-card" style={{ padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <History size={20} color="var(--text-primary)" />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>Chat History</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Open any past conversation — no need to re-enter your details</div>
+              </div>
+              <button className="pill-btn pill-btn-secondary" style={{ padding: '6px 10px', fontSize: 11 }} onClick={() => setView('menu')}>Back</button>
+            </div>
+            {historyLoading ? (
+              <div className="tag" style={{ fontFamily: 'inherit' }}>Loading your conversations...</div>
+            ) : !history.length ? (
+              <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13, padding: '24px 0' }}>
+                No conversations yet — tap "Start a Conversation" to talk to support.
+              </div>
+            ) : (
+              history.map(t => (
+                <div key={t.id} style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '12px 14px', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <div style={{ flex: 1, fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {t.subject || 'Support request'}
+                    </div>
+                    {t.status === 'closed' ? (
+                      <span className="tag" style={{ fontFamily: 'inherit' }}>Ended</span>
+                    ) : (
+                      <span className="tag" style={{ fontFamily: 'inherit', color: 'var(--accent-green)' }}>Open</span>
+                    )}
+                  </div>
+                  {t.preview && (
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {t.preview}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
+                    {t.lastMessageAt != null && <span>{fmtDateTime(t.lastMessageAt)}</span>}
+                    {t.unread > 0 && <span style={{ color: 'var(--accent-red, #ef4444)' }}>{t.unread} new</span>}
+                    {t.rating != null && <span style={{ color: 'var(--accent-amber, #f59e0b)', letterSpacing: 1 }}>{'★'.repeat(t.rating)}</span>}
+                    {t.messageCount > 0 && <span>{t.messageCount} message{t.messageCount > 1 ? 's' : ''}</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button className="pill-btn pill-btn-primary" style={{ flex: 1, fontSize: 12 }} onClick={() => openHistoryChat(t)}>
+                      {t.status === 'closed' ? 'Reopen conversation' : 'Open chat'}
+                    </button>
+                    <button className="pill-btn pill-btn-secondary" style={{ fontSize: 12, padding: '8px 12px' }} onClick={() => deleteHistory(t.id)} aria-label="Delete conversation">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
       {view === 'chat' && (
         <div className="bubble-card" style={{ padding: 0, marginTop: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 150px)', maxHeight: 560 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border-color)' }}>
@@ -249,6 +468,12 @@ export const HelpSupportScreen: React.FC = () => {
               </div>
             </div>
             {isClosed && <span className="tag" style={{ fontFamily: 'inherit' }}>Closed</span>}
+            {!isClosed && (
+              <button className="pill-btn pill-btn-secondary" style={{ padding: '6px 10px', fontSize: 11 }}
+                onClick={() => { setShowEndPanel(!showEndPanel); setError(''); }} id="btn-end-chat">
+                End chat
+              </button>
+            )}
           </div>
 
           <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 6px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -279,7 +504,72 @@ export const HelpSupportScreen: React.FC = () => {
                 <div style={{ background: 'var(--bg-glass-active)', borderRadius: 14, padding: '8px 12px', fontSize: 13, color: 'var(--text-tertiary)' }}>Typing…</div>
               </div>
             )}
+
+            {isClosed && (
+              <div id="chat-ended-banner" style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12, padding: '12px 10px', background: 'var(--bg-glass-active)', borderRadius: 12, border: '1px solid var(--border-color)', marginTop: 8 }}>
+                <div style={{ fontWeight: 700 }}>
+                  This conversation has ended{closedBy === 'user' ? ' — you ended it' : closedBy === 'admin' ? ' — ended by support' : ''}
+                </div>
+                {closedAt != null && <div style={{ marginTop: 2 }}>{fmtDateTime(closedAt)}</div>}
+                {rating != null ? (
+                  <div style={{ marginTop: 6 }}>
+                    <Stars count={rating} />
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Your rating</div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 12, marginBottom: 6 }}>How was your support experience?</div>
+                    <Stars count={rateStars} onChange={setRateStars} />
+                    <input
+                      className="input-bubble"
+                      style={{ width: '100%', marginTop: 8, marginBottom: 8 }}
+                      placeholder="Add a comment (optional)"
+                      value={rateComment}
+                      onChange={e => setRateComment(e.target.value)}
+                      maxLength={300}
+                    />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="pill-btn pill-btn-primary" style={{ flex: 1 }} onClick={submitRating} disabled={sending || !rateStars}>
+                        {sending ? 'Sending...' : 'Send rating'}
+                      </button>
+                      <button className="pill-btn pill-btn-secondary" style={{ flex: 1 }} onClick={continueChat} disabled={sending}>
+                        <RotateCcw size={14} /><span style={{ marginLeft: 4 }}>Continue conversation</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {rating != null && (
+                  <button className="pill-btn pill-btn-secondary" style={{ marginTop: 10, width: '100%' }} onClick={continueChat} disabled={sending}>
+                    <RotateCcw size={14} /><span style={{ marginLeft: 4 }}>Continue conversation</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
+
+          {showEndPanel && !isClosed && (
+            <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-glass-active)' }} id="end-chat-panel">
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>End this chat?</div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                The conversation will close and appear in your chat history. Rate your experience (optional):
+              </div>
+              <Stars count={rateStars} onChange={setRateStars} />
+              <input
+                className="input-bubble"
+                style={{ width: '100%', marginTop: 8 }}
+                placeholder="Add a comment (optional)"
+                value={rateComment}
+                onChange={e => setRateComment(e.target.value)}
+                maxLength={300}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button className="pill-btn pill-btn-secondary" style={{ flex: 1 }} onClick={() => { setShowEndPanel(false); setRateStars(0); setRateComment(''); }}>Cancel</button>
+                <button className="pill-btn pill-btn-primary" style={{ flex: 1 }} onClick={endChat} disabled={sending}>
+                  {sending ? 'Ending...' : 'End chat'}
+                </button>
+              </div>
+            </div>
+          )}
 
           <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 8 }}>
             <input
@@ -288,7 +578,7 @@ export const HelpSupportScreen: React.FC = () => {
               value={input}
               onChange={e => handleInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') sendMessage(); }}
-              placeholder={isClosed ? 'This conversation is closed' : 'Write a message...'}
+              placeholder={isClosed ? 'Chat ended' : 'Write a message...'}
               disabled={isClosed || !ticketId}
             />
             <button className="pill-btn pill-btn-primary" style={{ minWidth: 46, justifyContent: 'center' }}

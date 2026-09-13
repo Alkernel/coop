@@ -351,6 +351,9 @@ class DatabaseService {
     adminTyping: boolean;
     status: string;
     adminLastSeenAt: number | null;
+    closedBy: 'user' | 'admin' | null;
+    closedAt: number | null;
+    rating: number | null;
   }> {
     const sb = this.assertSupabase();
     const { data, error } = await sb.rpc('rpc_support_poll', {
@@ -365,7 +368,11 @@ class DatabaseService {
       adminTyping: Boolean(data.admin_typing),
       status: data.ticket?.status || 'open',
       adminLastSeenAt: data.ticket?.admin_last_seen_at
-        ? new Date(data.ticket.admin_last_seen_at).getTime() : null
+        ? new Date(data.ticket.admin_last_seen_at).getTime() : null,
+      closedBy: data.ticket?.closed_by || null,
+      closedAt: data.ticket?.closed_at
+        ? new Date(data.ticket.closed_at).getTime() : null,
+      rating: data.ticket?.rating != null ? Number(data.ticket.rating) : null
     };
   }
 
@@ -373,6 +380,63 @@ class DatabaseService {
     const sb = this.assertSupabase();
     const { error } = await sb.rpc('rpc_support_typing', {
       p_ticket_id: ticketId, p_wallet_id: walletId, p_admin_key: null
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  // --- Chat history, end/reopen/rate/delete ---
+  async mySupportTickets(walletId: string): Promise<{
+    id: string; subject: string; status: string; lastMessageAt: number | null;
+    unread: number; closedBy: 'user' | 'admin' | null; closedAt: number | null;
+    rating: number | null; preview: string; messageCount: number;
+  }[]> {
+    const sb = this.assertSupabase();
+    const { data, error } = await sb.rpc('rpc_support_my_tickets', { p_wallet_id: walletId });
+    if (error) throw new Error(error.message);
+    return (data || []).map((t: any) => ({
+      id: t.id,
+      subject: t.subject || 'Support request',
+      status: t.status || 'open',
+      lastMessageAt: t.last_message_at ? new Date(t.last_message_at).getTime() : null,
+      unread: Number(t.unread_for_user ?? 0),
+      closedBy: t.closed_by || null,
+      closedAt: t.closed_at ? new Date(t.closed_at).getTime() : null,
+      rating: t.rating != null ? Number(t.rating) : null,
+      preview: t.preview || '',
+      messageCount: Number(t.message_count ?? 0)
+    }));
+  }
+
+  async endSupportChat(ticketId: string, walletId: string, rating?: number | null, comment?: string | null): Promise<void> {
+    const sb = this.assertSupabase();
+    const { error } = await sb.rpc('rpc_support_end', {
+      p_ticket_id: ticketId, p_wallet_id: walletId,
+      p_rating: rating ?? null, p_comment: comment || null
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async rateSupportChat(ticketId: string, walletId: string, rating: number, comment?: string): Promise<void> {
+    const sb = this.assertSupabase();
+    const { error } = await sb.rpc('rpc_support_rate', {
+      p_ticket_id: ticketId, p_wallet_id: walletId,
+      p_rating: rating, p_comment: comment || null
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async reopenSupportChat(ticketId: string, walletId: string): Promise<void> {
+    const sb = this.assertSupabase();
+    const { error } = await sb.rpc('rpc_support_reopen', {
+      p_ticket_id: ticketId, p_wallet_id: walletId
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async deleteSupportChat(ticketId: string, walletId: string): Promise<void> {
+    const sb = this.assertSupabase();
+    const { error } = await sb.rpc('rpc_support_delete', {
+      p_ticket_id: ticketId, p_wallet_id: walletId
     });
     if (error) throw new Error(error.message);
   }
