@@ -1111,9 +1111,9 @@ function renderSupportThread(d) {
   h += '<div class="kv"><span class="k">Status</span><span class="v">' + pill(t.status) + ' <span id="support-presence" style="font-size:11px">' + supportPresenceHtml(d) + '</span></span></div>';
   h += '</div>';
   h += '<div class="card"><div class="card-title">Messages</div><div id="support-thread" style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding:4px 2px">' + supportMessagesHtml(d) + '</div>';
-  h += '<div class="field" style="margin-top:12px"><label>Reply as admin</label><textarea id="support-reply" rows="3" style="width:100%;resize:vertical" placeholder="' + (closed ? 'Chat ended - tap Reopen to reply' : 'Type a reply...') + '"' + (closed ? ' readonly' : '') + '></textarea></div>';
-  h += '<div class="btn-row"><button class="btn" onclick="sendAdminReply()" id="support-send-btn"' + (closed ? ' disabled' : '') + '>Send Reply</button></div>' +
-    '<span id="support-admin-typing-indicator" style="display:none;font-size:11px;color:var(--accent-green);align-self:center;white-space:nowrap">● typing…</span>';
+  h += '<div class="field" style="margin-top:12px"><label>Reply as admin</label><textarea id="support-reply" rows="5" style="width:100%;resize:vertical;min-height:80px" placeholder="' + (closed ? 'Chat ended - tap Reopen to reply' : 'Type a reply...') + '"' + (closed ? ' readonly' : '') + '></textarea></div>';
+  h += '<div class="btn-row" style="align-items:center;gap:8px"><button class="btn" onclick="sendAdminReply()" id="support-send-btn"' + (closed ? ' disabled' : '') + '>Send Reply</button>' +
+    '<span id="support-admin-typing-indicator" style="display:none;font-size:11px;color:var(--accent-green);white-space:nowrap">● typing…</span></div>';
   h += '<div id="support-msg" class="msg"></div></div>';
   el.innerHTML = h;
   var thr = $( 'support-thread'); if (thr) thr.scrollTop = thr.scrollHeight;
