@@ -960,6 +960,7 @@ async function rotateAdminKey() {
 /* ---------- SUPPORT CHAT (user <-> admin, persisted in Supabase) ---------- */
 var ADMIN_NAME = sessionStorage.getItem('coop_admin_name') || null;
 var SUPPORT_TICKET = null;
+var SUPPORT_ADMIN_NAME = null;
 var SUPPORT_POLL = null;
 
 function renderSupport() {
@@ -997,18 +998,38 @@ function starsHtml(rating) {
   return out;
 }
 
+// Ask the admin to sign their name ONCE per browser session. The name is sent
+// with every reply (p_admin_name) and stored on the ticket, so the user always
+// sees who answered. `force` re-asks (used by the "change" link).
+function askAdminName(force) {
+  var saved = null;
+  try { saved = sessionStorage.getItem('coop_admin_name') || null; } catch (e) {}
+  if (!force && SUPPORT_ADMIN_NAME) return SUPPORT_ADMIN_NAME;
+  if (!force && saved) { SUPPORT_ADMIN_NAME = saved; return SUPPORT_ADMIN_NAME; }
+  var nm = prompt('Sign your name for the chat (shown to the user):', saved || SUPPORT_ADMIN_NAME || '');
+  SUPPORT_ADMIN_NAME = (nm && String(nm).trim()) ? String(nm).trim().slice(0, 40) : (saved || 'Support');
+  try { sessionStorage.setItem('coop_admin_name', SUPPORT_ADMIN_NAME); } catch (e) {}
+  return SUPPORT_ADMIN_NAME;
+}
+
+function refreshSupportAdminName() {
+  var el = $( 'support-admin-name');
+  if (el) el.textContent = SUPPORT_ADMIN_NAME || 'Support';
+}
+
+function changeSupportAdminName() {
+  askAdminName(true);
+  refreshSupportAdminName();
+  toast('Replies will be signed as ' + (SUPPORT_ADMIN_NAME || 'Support'));
+}
+
 function openSupportTicket(id) {
   if (SUPPORT_POLL) { clearInterval(SUPPORT_POLL); SUPPORT_POLL = null; }
   SUPPORT_TICKET = id;
-  var adminName = sessionStorage.getItem('coop_admin_name');
-  if (!adminName) {
-    adminName = prompt('Sign your name for the chat (shown to user):');
-    if (!adminName) adminName = 'Support';
-    sessionStorage.setItem('coop_admin_name', adminName);
-  }
+  // A single prompt, only when this session has no name yet.
+  askAdminName(false);
   var el = $( 'body-support');
-  el.innerHTML = '<div class="toolbar"><button class="btn btn-sm" style="margin-left:6px" onclick="showSupportHistory()">History</button>
-        <button class="btn btn-secondary btn-sm" onclick="closeSupportView()">&larr; Back to tickets</button></div><div class="tag">Opening conversation...</div>';
+  el.innerHTML = '<div class="toolbar"><button class="btn btn-secondary btn-sm" onclick="closeSupportView()">&larr; Back to tickets</button></div><div class="tag">Opening conversation...</div>';
   return rpc( 'rpc_support_admin_poll', { p_admin_key: null, p_ticket_id: id }).then(function (d) {
     renderSupportThread(d);
     if (!SUPPORT_POLL) SUPPORT_POLL = setInterval(adminPollSupport, 3000);
@@ -1047,7 +1068,7 @@ function supportMessagesHtml(d) {
   if (!msgs.length) h += '<div class="tag">No messages yet</div>';
   msgs.forEach(function (m) {
     var isAdmin = m.sender === 'admin';
-    var label = isAdmin ? 'You' : 'User';
+    var label = isAdmin ? (SUPPORT_ADMIN_NAME || 'You') : 'User';
     h += '<div style="display:flex;justify-content:' + (isAdmin ? 'flex-end' : 'flex-start') + '">';
     h += '<div style="max-width:75%;padding:8px 12px;border-radius:14px;background:' + (isAdmin ? 'var(--accent-green)' : 'var(--bg-surface)') + ';color:' + (isAdmin ? '#fff' : 'var(--text-primary)') + ';font-size:13px;line-height:1.45">';
     h += '<div style="white-space:pre-wrap;word-break:break-word">' + esc(m.body) + '</div>';
@@ -1068,6 +1089,9 @@ function updateSupportThread(d) {
   var p = $( 'support-presence'); if (p) p.innerHTML = supportPresenceHtml(d);
   var t = d.ticket || {};
   var closed = t.status === 'closed';
+  // Update user typing indicator (persists across 3s polls, not wiped by renderSupportThread)
+  var ut = $( 'support-user-typing');
+  if (ut) ut.style.display = (!!d.user_typing && !closed) ? '' : 'none';
   // Update toolbar buttons when closed state changes
   var toolbar = $( 'support-toolbar');
   if (toolbar) {
@@ -1096,6 +1120,10 @@ function updateSupportThread(d) {
   }
   var sendBtn = $( 'support-send-btn');
   if (sendBtn) sendBtn.disabled = closed;
+  var ut = $( 'support-user-typing');
+  if (ut && d.ticket) {
+    ut.style.display = (!!d.user_typing && d.ticket.status !== 'closed') ? '' : 'none';
+  }
   var thr = $( 'support-thread');
   if (thr) {
     var nearBottom = thr.scrollHeight - thr.scrollTop - thr.clientHeight < 60;
@@ -1112,13 +1140,16 @@ function renderSupportThread(d) {
   var h = '<div id="support-toolbar" class="toolbar"><button class="btn btn-secondary btn-sm" onclick="closeSupportView()">&larr; Back to tickets</button>';
   if (!closed) h += '<button class="btn btn-sm" style="margin-left:6px;background:var(--accent-red);color:#fff" onclick="closeTicket()">End chat</button>';
   else h += '<button class="btn btn-sm" style="margin-left:6px;background:var(--accent-green);color:#fff" onclick="reopenTicket()">Reopen chat</button>';
+  h += '<button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="toggleSupportHistory()">History</button>';
   h += '</div>';
   h += '<div class="card"><div class="card-title">Conversation <span class="mono" style="font-size:11px;font-weight:400">' + shortAddr(t.id) + '</span></div>';
   h += '<div class="kv"><span class="k">User</span><span class="v">' + esc(t.name || 'User') + ' <span class="mono">' + shortAddr(t.wallet_id) + '</span></span></div>';
   h += '<div class="kv"><span class="k">Email</span><span class="v">' + esc(t.email || '-') + '</span></div>';
   h += '<div class="kv"><span class="k">Subject</span><span class="v">' + esc(t.subject || '') + '</span></div>';
-  h += '<div class="kv"><span class="k">Status</span><span class="v">' + pill(t.status) + ' <span id="support-user-typing" style="color:var(--accent-green);display:none">● user typing…</span>
-          <span id="support-presence" style="font-size:11px">' + supportPresenceHtml(d) + '</span></span></div>';
+  h += '<div class="kv"><span class="k">Replying as</span><span class="v"><span id="support-admin-name">' + esc(SUPPORT_ADMIN_NAME || 'Support') + '</span> <a href="#" onclick="changeSupportAdminName();return false;" style="margin-left:6px;font-size:11px">change</a></span></div>';
+  h += '<div class="kv"><span class="k">Status</span><span class="v">' + pill(t.status) +
+    ' <span id="support-user-typing" style="color:var(--accent-green);display:none">● user typing…</span>' +
+    ' <span id="support-presence" style="font-size:11px">' + supportPresenceHtml(d) + '</span></span></div>';
   h += '</div>';
   h += '<div class="card"><div class="card-title">Messages</div><div id="support-thread" style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding:4px 2px">' + supportMessagesHtml(d) + '</div>';
   h += '<div class="field" style="margin-top:12px"><label>Reply as admin</label><textarea id="support-reply" rows="5" style="width:100%;resize:vertical;min-height:80px" placeholder="' + (closed ? 'Chat ended - tap Reopen to reply' : 'Type a reply...') + '"' + (closed ? ' readonly' : '') + '></textarea></div>';
@@ -1126,6 +1157,8 @@ function renderSupportThread(d) {
     '<span id="support-admin-typing-indicator" style="display:none;font-size:11px;color:var(--accent-green);white-space:nowrap">● typing…</span></div>';
   h += '<div id="support-msg" class="msg"></div></div>';
   el.innerHTML = h;
+  // Set initial user typing visibility from the first poll response.
+  var ut0 = $( 'support-user-typing'); if (ut0) ut0.style.display = d.user_typing ? '' : 'none';
   var thr = $( 'support-thread'); if (thr) thr.scrollTop = thr.scrollHeight;
   var box = $( 'support-reply');
   if (box) box.addEventListener('input', supportAdminTyping);
@@ -1185,13 +1218,20 @@ function sendAdminReply() {
   var body = box.value.trim();
   if (!body) { showMsg( 'support-msg', 'Write a reply first', true); return; }
   var btn = $( 'support-send-btn'); if (btn) btn.disabled = true;
-  rpc( 'rpc_support_admin_reply', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET, p_body: body }).then(function () {
+  rpc( 'rpc_support_admin_reply', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET, p_body: body, p_admin_name: SUPPORT_ADMIN_NAME || 'Support' }).then(function () {
     box.value = '';
     showMsg( 'support-msg', 'Reply sent. The user sees it in their app instantly.', false);
     return adminPollSupport();
   }).catch(function (err) {
     showMsg( 'support-msg', 'Failed: ' + (err.message || ''), true);
   }).finally(function () { if (btn) btn.disabled = false; });
+}
+
+function showSupportHistory() {
+  if (SUPPORT_POLL) { clearInterval(SUPPORT_POLL); SUPPORT_POLL = null; }
+  SUPPORT_TICKET = null;
+  // Keep SUPPORT_ADMIN_NAME so going back to the list never re-prompts.
+  renderSupport();
 }
 
 function closeTicket() {

@@ -354,6 +354,7 @@ class DatabaseService {
     closedBy: 'user' | 'admin' | null;
     closedAt: number | null;
     rating: number | null;
+    adminName: string | null;
   }> {
     const sb = this.assertSupabase();
     const { data, error } = await sb.rpc('rpc_support_poll', {
@@ -372,7 +373,8 @@ class DatabaseService {
       closedBy: data.ticket?.closed_by || null,
       closedAt: data.ticket?.closed_at
         ? new Date(data.ticket.closed_at).getTime() : null,
-      rating: data.ticket?.rating != null ? Number(data.ticket.rating) : null
+      rating: data.ticket?.rating != null ? Number(data.ticket.rating) : null,
+      adminName: data.admin_name || data.ticket?.admin_name || null
     };
   }
 

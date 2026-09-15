@@ -192,9 +192,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [miningStatus?.session]);
 
   const isMiningActive = Boolean(miningStatus?.session && miningStatus.session.status === 'mining' && miningRemainingMs > 0);
+  // The server refuses to START a session unless a full 12h block still fits
+  // in today's allowance, so the limit is purely hours-based. It must NOT
+  // depend on the absence of a session, otherwise a stale/completed session
+  // record leaves an enabled "Start" button that always fails.
   const dailyLimitReached = Boolean(
-    miningStatus && !miningStatus.session &&
-    miningStatus.hoursMinedToday >= miningStatus.dailyHours - 0.001
+    miningStatus && miningStatus.hoursMinedToday >= miningStatus.dailyHours - 0.001
   );
 
   // --- Auth Handlers ---
@@ -275,9 +278,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!account) return 0;
     const res = await dbService.stopMining(account);
     setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
-    await refreshMiningStatus(account.id);
-    setTransactions(await dbService.getTransactions(account.id));
     addNotification('Mining Claimed', `+${res.reward} Coopoint credited to your balance.`, 'success');
+    // The reward is already credited at this point. A failing follow-up refresh
+    // must never be reported to the user as a failed claim.
+    try {
+      await refreshMiningStatus(account.id);
+      setTransactions(await dbService.getTransactions(account.id));
+    } catch (e) {
+      console.warn('Post-claim refresh failed:', e);
+    }
     return res.reward;
   };
 
@@ -286,9 +295,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!account) return 0;
     const res = await dbService.claimMining(account);
     setAccount(prev => prev ? { ...prev, ...res.wallet, privateKey: prev.privateKey } : prev);
-    await refreshMiningStatus(account.id);
-    setTransactions(await dbService.getTransactions(account.id));
     addNotification('Mining Claimed', `+${res.reward} Coopoint credited to your balance.`, 'success');
+    // See stopMining: never turn a credited claim into an error dialog.
+    try {
+      await refreshMiningStatus(account.id);
+      setTransactions(await dbService.getTransactions(account.id));
+    } catch (e) {
+      console.warn('Post-claim refresh failed:', e);
+    }
     return res.reward;
   };
 

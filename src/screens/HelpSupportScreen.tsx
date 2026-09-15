@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, HelpCircle, MessageSquare, AlertCircle, Send, Check, CheckCheck, Wifi, WifiOff, ExternalLink, History, Trash2, RotateCcw, Star } from 'lucide-react';
+import { ChevronLeft, HelpCircle, MessageSquare, AlertCircle, Send, Check, CheckCheck, Wifi, WifiOff, ExternalLink, History, Trash2, RotateCcw, Star, Volume2, VolumeX, X } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
 import { dbService } from '../services/supabase';
+import { chatFx, isChatFxMuted, setChatFxMuted } from '../utils/chatFx';
 
 interface ChatMsg {
   id: string;
@@ -40,6 +41,16 @@ const fmtTime = (ts: number) =>
 const fmtDateTime = (ts: number) =>
   new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+// PostgREST reports a missing/un-deployed RPC as a confusing "schema cache"
+// error. Point the operator at the fix instead of showing raw SQL noise.
+const friendlyError = (err: any, fallback: string): string => {
+  const msg = String(err?.message || '');
+  if (/PGRST202|Could not find the function|schema cache/i.test(msg)) {
+    return 'Support backend needs an update — run supabase/migration-v8-support-history.sql in Supabase, then try again.';
+  }
+  return msg || fallback;
+};
+
 const Stars = ({ count, onChange }: { count: number; onChange?: (v: number) => void }) => (
   <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
     {[1, 2, 3, 4, 5].map(s => (
@@ -72,6 +83,7 @@ export const HelpSupportScreen: React.FC = () => {
   const [adminLastSeenAt, setAdminLastSeenAt] = useState<number | null>(null);
   const [closedBy, setClosedBy] = useState<'user' | 'admin' | null>(null);
   const [closedAt, setClosedAt] = useState<number | null>(null);
+  const [adminName, setAdminName] = useState<string | null>(null);
   const [rating, setRating] = useState<number | null>(null);
   const [showEndPanel, setShowEndPanel] = useState(false);
   const [rateStars, setRateStars] = useState(0);
@@ -84,6 +96,11 @@ export const HelpSupportScreen: React.FC = () => {
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastTypingTs = useRef(0);
+  // Chat history is shown as an in-chat drawer so the user never loses the thread.
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const [chatFxMutedState, setChatFxMutedState] = useState<boolean>(isChatFxMuted());
+  const lastMsgIdRef = useRef<string | null>(null);
+  const historyRef = useRef<HTMLDivElement | null>(null);
 
   // Poll the conversation (messages + presence) every 3 seconds.
   useEffect(() => {
@@ -93,11 +110,19 @@ export const HelpSupportScreen: React.FC = () => {
       try {
         const res = await dbService.pollSupport(ticketId, account.id);
         if (stopped) return;
+        // Chime + vibrate only for a genuinely new admin message (never on the
+        // first load of a conversation, which would be noise).
+        const newest = res.messages[res.messages.length - 1];
+        if (newest && newest.sender === 'admin' && lastMsgIdRef.current && newest.id !== lastMsgIdRef.current) {
+          chatFx.received();
+        }
+        if (newest) lastMsgIdRef.current = newest.id;
         setMessages(res.messages);
         setAdminOnline(res.adminOnline);
         setAdminTyping(res.adminTyping);
         setTicketStatus(res.status);
         setAdminLastSeenAt(res.adminLastSeenAt);
+        setAdminName(res.adminName);
         setClosedBy(res.closedBy);
         setClosedAt(res.closedAt);
         setRating(res.rating);
@@ -131,11 +156,16 @@ export const HelpSupportScreen: React.FC = () => {
       setShowEndPanel(false);
       setRateStars(0);
       setRateComment('');
+      setShowChatHistory(false);
+      lastMsgIdRef.current = null;
       const res = await dbService.pollSupport(id, account.id);
       setMessages(res.messages);
+      lastMsgIdRef.current = res.messages.length ? res.messages[res.messages.length - 1].id : null;
       setView('chat');
+      chatFx.sent();
     } catch (err: any) {
-      setError(err?.message || 'Could not start the conversation. Try again.');
+      setError(friendlyError(err, 'Could not start the conversation. Try again.'));
+      chatFx.failed();
     } finally {
       setSending(false);
     }
@@ -149,11 +179,14 @@ export const HelpSupportScreen: React.FC = () => {
     try {
       await dbService.sendSupportMessage(ticketId, account.id, body);
       setInput('');
+      chatFx.sent();
       const res = await dbService.pollSupport(ticketId, account.id);
       setMessages(res.messages);
+      lastMsgIdRef.current = res.messages.length ? res.messages[res.messages.length - 1].id : null;
       setAdminTyping(res.adminTyping);
     } catch (err: any) {
-      setError(err?.message || 'Could not send your message.');
+      setError(friendlyError(err, 'Could not send your message.'));
+      chatFx.failed();
     } finally {
       setSending(false);
     }
@@ -177,7 +210,7 @@ export const HelpSupportScreen: React.FC = () => {
     try {
       setHistory(await dbService.mySupportTickets(account.id));
     } catch (err: any) {
-      setError(err?.message || 'Could not load your chat history.');
+      setError(friendlyError(err, 'Could not load your chat history.'));
     } finally {
       setHistoryLoading(false);
     }
@@ -188,6 +221,8 @@ export const HelpSupportScreen: React.FC = () => {
     setMessages([]);
     setError('');
     setShowEndPanel(false);
+    setShowChatHistory(false);
+    lastMsgIdRef.current = null;
     setRateStars(0);
     setRateComment('');
     setClosedBy(t.closedBy);
@@ -202,11 +237,36 @@ export const HelpSupportScreen: React.FC = () => {
     if (!window.confirm('Delete this conversation permanently? This cannot be undone.')) return;
     try {
       await dbService.deleteSupportChat(id, account.id);
-      if (ticketId === id) { setTicketId(null); setMessages([]); setView('history'); }
+      if (ticketId === id) {
+        setTicketId(null);
+        setMessages([]);
+        setShowChatHistory(false);
+        lastMsgIdRef.current = null;
+        setView('history');
+      }
       await loadHistory();
     } catch (err: any) {
-      setError(err?.message || 'Could not delete the conversation.');
+      setError(friendlyError(err, 'Could not delete the conversation.'));
     }
+  };
+
+  // Toggle the in-chat history drawer (keeps the live conversation on screen).
+  const toggleChatHistory = async () => {
+    const next = !showChatHistory;
+    setShowChatHistory(next);
+    setError('');
+    if (next) {
+      await loadHistory();
+      const el = historyRef.current;
+      if (el) el.scrollTop = 0;
+    }
+  };
+
+  const toggleChatFx = () => {
+    const next = !chatFxMutedState;
+    setChatFxMuted(next);
+    setChatFxMutedState(next);
+    if (!next) chatFx.received();
   };
 
   const endChat = async () => {
@@ -216,6 +276,7 @@ export const HelpSupportScreen: React.FC = () => {
     try {
       await dbService.endSupportChat(ticketId, account.id, rateStars || null, rateComment.trim() || null);
       setShowEndPanel(false);
+      chatFx.ended();
       const res = await dbService.pollSupport(ticketId, account.id);
       setMessages(res.messages);
       setTicketStatus(res.status);
@@ -223,7 +284,8 @@ export const HelpSupportScreen: React.FC = () => {
       setClosedAt(res.closedAt);
       setRating(res.rating);
     } catch (err: any) {
-      setError(err?.message || 'Could not end the chat.');
+      setError(friendlyError(err, 'Could not end the chat.'));
+      chatFx.failed();
     } finally {
       setSending(false);
     }
@@ -238,10 +300,12 @@ export const HelpSupportScreen: React.FC = () => {
       await dbService.rateSupportChat(ticketId, account.id, rateStars, rateComment.trim() || undefined);
       setRateStars(0);
       setRateComment('');
+      chatFx.ended();
       const res = await dbService.pollSupport(ticketId, account.id);
       setRating(res.rating);
     } catch (err: any) {
-      setError(err?.message || 'Could not submit your rating.');
+      setError(friendlyError(err, 'Could not submit your rating.'));
+      chatFx.failed();
     } finally {
       setSending(false);
     }
@@ -255,14 +319,17 @@ export const HelpSupportScreen: React.FC = () => {
       await dbService.reopenSupportChat(ticketId, account.id);
       setRateStars(0);
       setRateComment('');
+      chatFx.sent();
       const res = await dbService.pollSupport(ticketId, account.id);
       setMessages(res.messages);
+      lastMsgIdRef.current = res.messages.length ? res.messages[res.messages.length - 1].id : null;
       setTicketStatus(res.status);
       setClosedBy(res.closedBy);
       setClosedAt(res.closedAt);
       setRating(res.rating);
     } catch (err: any) {
-      setError(err?.message || 'Could not reopen the conversation.');
+      setError(friendlyError(err, 'Could not reopen the conversation.'));
+      chatFx.failed();
     } finally {
       setSending(false);
     }
@@ -454,13 +521,13 @@ export const HelpSupportScreen: React.FC = () => {
       )}
 
       {view === 'chat' && (
-        <div className="bubble-card" style={{ padding: 0, marginTop: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 150px)', maxHeight: 560 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border-color)' }}>
+        <div className="bubble-card" style={{ padding: 0, marginTop: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box', minWidth: 0, height: 'calc(100vh - 150px)', minHeight: 420, maxHeight: 620 }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', rowGap: 6, gap: 8, padding: '12px 14px', borderBottom: '1px solid var(--border-color)' }}>
             <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--bg-glass-active)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <MessageSquare size={16} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>COOP Support</div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{adminName || 'COOP Support'}</div>
               <div style={{ fontSize: 11, color: adminOnline ? 'var(--accent-green)' : 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
                 {adminOnline ? <Wifi size={11} /> : <WifiOff size={11} />}
                 {adminOnline ? 'Online' : 'Offline'}
@@ -468,8 +535,33 @@ export const HelpSupportScreen: React.FC = () => {
               </div>
             </div>
             {isClosed && <span className="tag" style={{ fontFamily: 'inherit' }}>Closed</span>}
+            <button
+              className="pill-btn pill-btn-secondary"
+              onClick={toggleChatHistory}
+              title="Chat history"
+              aria-label="Chat history"
+              aria-pressed={showChatHistory}
+              style={{
+                padding: '6px 10px', fontSize: 11, width: 'auto', flex: '0 0 auto',
+                background: showChatHistory ? 'var(--bg-glass-active)' : undefined
+              }}
+              id="btn-chat-history">
+              <History size={13} />
+              <span style={{ marginLeft: 4 }}>History</span>
+            </button>
+            <button
+              className="pill-btn pill-btn-secondary"
+              onClick={toggleChatFx}
+              title={chatFxMutedState ? 'Unmute chat sounds' : 'Mute chat sounds'}
+              aria-label={chatFxMutedState ? 'Unmute chat sounds' : 'Mute chat sounds'}
+              style={{ padding: '6px 8px', fontSize: 11, width: 'auto', flex: '0 0 auto' }}
+              id="btn-chat-sound">
+              {chatFxMutedState ? <VolumeX size={13} /> : <Volume2 size={13} />}
+            </button>
             {!isClosed && (
-              <button className="pill-btn pill-btn-secondary" style={{ padding: '6px 10px', fontSize: 11 }}
+              <button
+                className="pill-btn pill-btn-secondary"
+                style={{ padding: '6px 10px', fontSize: 11, width: 'auto', flex: '0 0 auto' }}
                 onClick={() => { setShowEndPanel(!showEndPanel); setError(''); }} id="btn-end-chat">
                 End chat
               </button>
@@ -490,6 +582,9 @@ export const HelpSupportScreen: React.FC = () => {
                     background: mine ? 'var(--accent-green)' : 'var(--bg-glass-active)',
                     color: mine ? '#ffffff' : 'var(--text-primary)', fontSize: 13, lineHeight: 1.45
                   }}>
+                    {!mine && adminName && (
+                      <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.85, marginBottom: 2 }}>{adminName}</div>
+                    )}
                     <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body.replace(/^\[([^\]]+)\]\s*/, '')}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3, fontSize: 10, opacity: 0.8, justifyContent: 'flex-end' }}>
                       <span>{fmtTime(m.createdAt)}</span>
@@ -547,6 +642,51 @@ export const HelpSupportScreen: React.FC = () => {
             )}
           </div>
 
+          {showChatHistory && (
+            <div id="chat-history-drawer" ref={historyRef} style={{ borderTop: '1px solid var(--border-color)', background: 'var(--bg-glass-active)', padding: '10px 12px', maxHeight: 280, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 700 }}>Your conversations</div>
+                <button className="pill-btn pill-btn-secondary" style={{ padding: '4px 9px', width: 'auto', flex: '0 0 auto' }}
+                  onClick={() => setShowChatHistory(false)} aria-label="Close history">
+                  <X size={12} />
+                </button>
+              </div>
+              {historyLoading ? (
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Loading your conversations…</div>
+              ) : !history.length ? (
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '6px 0' }}>No conversations yet.</div>
+              ) : (
+                history.map(t => (
+                  <div key={t.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 12, marginBottom: 6,
+                    background: t.id === ticketId ? 'var(--bg-surface)' : 'transparent',
+                    border: '1px solid var(--border-color)'
+                  }}>
+                    <button
+                      onClick={() => { openHistoryChat(t); setShowChatHistory(false); }}
+                      style={{ flex: '1 1 auto', minWidth: 0, textAlign: 'left', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}
+                      aria-label={`Open ${t.subject || 'conversation'}`}>
+                      <div style={{ fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t.subject || 'Support request'}
+                        {t.id === ticketId && <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}> · current</span>}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t.status === 'closed' ? 'Ended' : 'Open'}
+                        {t.rating != null ? ` · ${'★'.repeat(t.rating)}` : ''}
+                        {t.lastMessageAt != null ? ` · ${fmtDateTime(t.lastMessageAt)}` : ''}
+                        {t.preview ? ` · ${t.preview.replace(/^\[([^\]]+)\]\s*/, '')}` : ''}
+                      </div>
+                    </button>
+                    <button className="pill-btn pill-btn-secondary" style={{ padding: '6px 8px', width: 'auto', flex: '0 0 auto' }}
+                      onClick={() => deleteHistory(t.id)} aria-label="Delete conversation">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
           {showEndPanel && !isClosed && (
             <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-glass-active)' }} id="end-chat-panel">
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>End this chat?</div>
@@ -571,18 +711,21 @@ export const HelpSupportScreen: React.FC = () => {
             </div>
           )}
 
-          <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 8 }}>
+          <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
             <input
               className="input-bubble"
-              style={{ flex: 1, minWidth: 0 }}
+              style={{ flex: '1 1 auto', width: 'auto', minWidth: 0, padding: '12px 14px', fontSize: 14 }}
               value={input}
               onChange={e => handleInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') sendMessage(); }}
               placeholder={isClosed ? 'Chat ended' : 'Write a message...'}
               disabled={isClosed || !ticketId}
             />
-            <button className="pill-btn pill-btn-primary" style={{ minWidth: 46, justifyContent: 'center' }}
-              onClick={sendMessage} disabled={sending || isClosed || !input.trim()}>
+            <button
+              className="pill-btn pill-btn-primary"
+              style={{ flex: '0 0 auto', width: 'auto', minWidth: 46, padding: '12px 16px' }}
+              onClick={sendMessage} disabled={sending || isClosed || !input.trim()}
+              aria-label="Send message" id="btn-send-message">
               <Send size={16} />
             </button>
           </div>

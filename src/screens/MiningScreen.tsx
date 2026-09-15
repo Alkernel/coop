@@ -66,7 +66,21 @@ export const MiningScreen: React.FC = () => {
     setBusy(true);
     setMineError('');
     try {
-      const reward = await claimMining();
+      let reward: number;
+      try {
+        reward = await claimMining();
+      } catch (err: any) {
+        // The on-screen countdown runs on the DEVICE clock while the server is
+        // authoritative, so a device clock running fast can offer "Claim"
+        // slightly before the server accepts it. Wait for the server's own
+        // clock and retry exactly once instead of showing a hard failure.
+        if (/countdown is not finished/i.test(String(err?.message || ''))) {
+          await new Promise(resolve => window.setTimeout(resolve, 2500));
+          reward = await claimMining();
+        } else {
+          throw err;
+        }
+      }
       if (reward > 0) {
         confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
       }
@@ -96,7 +110,7 @@ export const MiningScreen: React.FC = () => {
         </div>
         <div style={{ marginTop: 24, textAlign: 'center' }}>
           <h2 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.3px', marginBottom: 6 }}>
-            {dailyLimitReached ? 'Daily Limit Reached' : hasPendingClaim ? 'Session Complete' : isMiningActive ? 'You are mining!' : 'Mining Paused'}
+            {hasPendingClaim ? 'Session Complete' : isMiningActive ? 'You are mining!' : dailyLimitReached ? 'Daily Limit Reached' : 'Mining Paused'}
           </h2>
           <p style={{ fontSize: 14, color: 'var(--text-secondary)', fontWeight: 600 }}>
             {fmt(effectiveRate, 1)} Point/hour
@@ -116,12 +130,10 @@ export const MiningScreen: React.FC = () => {
           )}
         </div>
         <div style={{ width: '100%', marginTop: 20 }}>
-          {dailyLimitReached || (status && !status.miningEnabled) ? (
-            <button className="pill-btn pill-btn-primary" disabled style={{ opacity: 0.6 }}>
-              <Ban size={18} />
-              {status && !status.miningEnabled ? 'Mining is currently disabled' : "Daily limit reached - resets " + (status ? formatReset(status.nextResetUtc) : 'at 00:00 UTC')}
-            </button>
-          ) : hasPendingClaim ? (
+          {/* Order matters: a finished-but-unclaimed session (and the live
+              countdown) must never be hidden behind the daily-limit message,
+              otherwise the Claim button can become unreachable. */}
+          {hasPendingClaim ? (
             <button className="pill-btn pill-btn-primary" onClick={handleClaim} disabled={busy} id="mining-claim-btn" style={{ background: 'var(--accent-green)', color: '#ffffff' }}>
               <CheckCircle2 size={18} />
               {busy ? 'Claiming...' : 'Claim ' + fmt(sessionReward) + ' Point'}
@@ -130,6 +142,11 @@ export const MiningScreen: React.FC = () => {
             <button className="pill-btn pill-btn-primary" disabled style={{ opacity: 0.65 }} id="mining-countdown-btn">
               <Clock size={18} />
               Claim in {formatTime(miningRemainingMs)}
+            </button>
+          ) : dailyLimitReached || (status && !status.miningEnabled) ? (
+            <button className="pill-btn pill-btn-primary" disabled style={{ opacity: 0.6 }} id="mining-blocked-btn">
+              <Ban size={18} />
+              {status && !status.miningEnabled ? 'Mining is currently disabled' : 'Daily limit reached - resets ' + (status ? formatReset(status.nextResetUtc) : 'at 00:00 UTC')}
             </button>
           ) : (
             <button className="pill-btn pill-btn-primary" onClick={handleStart} disabled={busy} id="mining-start-btn">
