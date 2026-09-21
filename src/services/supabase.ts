@@ -354,6 +354,7 @@ class DatabaseService {
     closedBy: 'user' | 'admin' | null;
     closedAt: number | null;
     rating: number | null;
+    ratingComment: string | null;
     adminName: string | null;
   }> {
     const sb = this.assertSupabase();
@@ -374,6 +375,7 @@ class DatabaseService {
       closedAt: data.ticket?.closed_at
         ? new Date(data.ticket.closed_at).getTime() : null,
       rating: data.ticket?.rating != null ? Number(data.ticket.rating) : null,
+      ratingComment: data.ticket?.rating_comment || null,
       adminName: data.admin_name || data.ticket?.admin_name || null
     };
   }

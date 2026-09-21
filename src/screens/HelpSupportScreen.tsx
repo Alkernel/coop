@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, HelpCircle, MessageSquare, AlertCircle, Send, Check, CheckCheck, Wifi, WifiOff, ExternalLink, History, Trash2, RotateCcw, Star, Volume2, VolumeX, X } from 'lucide-react';
+import { ChevronLeft, HelpCircle, MessageSquare, AlertCircle, Send, Check, CheckCheck, Wifi, WifiOff, ExternalLink, History, Trash2, RotateCcw, Star, Volume2, VolumeX, X, Plus } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
 import { dbService } from '../services/supabase';
 import { chatFx, isChatFxMuted, setChatFxMuted } from '../utils/chatFx';
@@ -46,7 +46,10 @@ const fmtDateTime = (ts: number) =>
 const friendlyError = (err: any, fallback: string): string => {
   const msg = String(err?.message || '');
   if (/PGRST202|Could not find the function|schema cache/i.test(msg)) {
-    return 'Support backend needs an update — run supabase/migration-v8-support-history.sql in Supabase, then try again.';
+    return 'Support backend needs an update — run supabase/migration-v8-support-history.sql then supabase/migration-v9-support-ratings.sql in Supabase, then try again.';
+  }
+  if (/violates check constraint/i.test(msg)) {
+    return 'Database constraint out of date — run supabase/migration-v9-support-ratings.sql in Supabase, then try again.';
   }
   return msg || fallback;
 };
@@ -70,7 +73,10 @@ const Stars = ({ count, onChange }: { count: number; onChange?: (v: number) => v
 
 export const HelpSupportScreen: React.FC = () => {
   const { goBack, account } = useWallet();
-  const [view, setView] = useState<'menu' | 'form' | 'chat' | 'history'>('menu');
+  // The chat is the main support surface: it shows the conversation list while
+  // no conversation is selected, so history lives INSIDE the chat, never in a
+  // separate page. `history` below therefore only feeds that in-chat list.
+  const [view, setView] = useState<'menu' | 'form' | 'chat'>('menu');
   const [formType, setFormType] = useState<'contact' | 'report'>('contact');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -85,6 +91,7 @@ export const HelpSupportScreen: React.FC = () => {
   const [closedAt, setClosedAt] = useState<number | null>(null);
   const [adminName, setAdminName] = useState<string | null>(null);
   const [rating, setRating] = useState<number | null>(null);
+  const [savedRatingComment, setSavedRatingComment] = useState<string | null>(null);
   const [showEndPanel, setShowEndPanel] = useState(false);
   const [rateStars, setRateStars] = useState(0);
   const [rateComment, setRateComment] = useState('');
@@ -126,6 +133,7 @@ export const HelpSupportScreen: React.FC = () => {
         setClosedBy(res.closedBy);
         setClosedAt(res.closedAt);
         setRating(res.rating);
+        setSavedRatingComment(res.ratingComment);
       } catch (e) { /* transient poll failure - retry next tick */ }
     };
     poll();
@@ -153,6 +161,7 @@ export const HelpSupportScreen: React.FC = () => {
       setClosedBy(null);
       setClosedAt(null);
       setRating(null);
+      setSavedRatingComment(null);
       setShowEndPanel(false);
       setRateStars(0);
       setRateComment('');
@@ -228,6 +237,7 @@ export const HelpSupportScreen: React.FC = () => {
     setClosedBy(t.closedBy);
     setClosedAt(t.closedAt);
     setRating(t.rating);
+    setSavedRatingComment(null);
     setTicketStatus(t.status);
     setView('chat');
   };
@@ -242,12 +252,48 @@ export const HelpSupportScreen: React.FC = () => {
         setMessages([]);
         setShowChatHistory(false);
         lastMsgIdRef.current = null;
-        setView('history');
+        // Back to the chat home (the conversation list) rather than a page.
+        setView('chat');
       }
       await loadHistory();
     } catch (err: any) {
       setError(friendlyError(err, 'Could not delete the conversation.'));
     }
+  };
+
+  // Opens the chat surface. With no conversation selected it shows the list of
+  // past conversations right inside the chat, so the user chooses between
+  // continuing a still-open chat or starting a brand new one.
+  const openChatHome = async () => {
+    setError('');
+    setShowChatHistory(false);
+    setView('chat');
+    await loadHistory();
+  };
+
+  const startNewChat = (type: 'contact' | 'report') => {
+    setFormType(type);
+    setMessage('');
+    setError('');
+    setShowChatHistory(false);
+    setView('form');
+  };
+
+  // A conversation is terminal once ended, so "continue" really means "start a
+  // fresh conversation with support".
+  const startNewChatFromEnded = () => {
+    setTicketId(null);
+    setMessages([]);
+    setShowEndPanel(false);
+    setShowChatHistory(false);
+    setClosedBy(null);
+    setClosedAt(null);
+    setRating(null);
+    setSavedRatingComment(null);
+    setRateStars(0);
+    setRateComment('');
+    lastMsgIdRef.current = null;
+    startNewChat('contact');
   };
 
   // Toggle the in-chat history drawer (keeps the live conversation on screen).
@@ -283,6 +329,7 @@ export const HelpSupportScreen: React.FC = () => {
       setClosedBy(res.closedBy);
       setClosedAt(res.closedAt);
       setRating(res.rating);
+      setSavedRatingComment(res.ratingComment);
     } catch (err: any) {
       setError(friendlyError(err, 'Could not end the chat.'));
       chatFx.failed();
@@ -303,32 +350,9 @@ export const HelpSupportScreen: React.FC = () => {
       chatFx.ended();
       const res = await dbService.pollSupport(ticketId, account.id);
       setRating(res.rating);
+      setSavedRatingComment(res.ratingComment);
     } catch (err: any) {
       setError(friendlyError(err, 'Could not submit your rating.'));
-      chatFx.failed();
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const continueChat = async () => {
-    if (!ticketId || !account) return;
-    setSending(true);
-    setError('');
-    try {
-      await dbService.reopenSupportChat(ticketId, account.id);
-      setRateStars(0);
-      setRateComment('');
-      chatFx.sent();
-      const res = await dbService.pollSupport(ticketId, account.id);
-      setMessages(res.messages);
-      lastMsgIdRef.current = res.messages.length ? res.messages[res.messages.length - 1].id : null;
-      setTicketStatus(res.status);
-      setClosedBy(res.closedBy);
-      setClosedAt(res.closedAt);
-      setRating(res.rating);
-    } catch (err: any) {
-      setError(friendlyError(err, 'Could not reopen the conversation.'));
       chatFx.failed();
     } finally {
       setSending(false);
@@ -374,31 +398,21 @@ export const HelpSupportScreen: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
               <MessageSquare size={22} color="var(--text-primary)" />
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>Live Support</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Talk directly to an admin in real time</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>Support Chat</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Continue a conversation or start a new one</div>
               </div>
             </div>
             <button className="pill-btn pill-btn-primary" style={{ width: '100%', marginBottom: 10 }}
-              onClick={() => { setFormType('contact'); setMessage(''); setError(''); setView('form'); }} id="btn-contact-support">
-              Start a Conversation
+              onClick={openChatHome} id="btn-open-support-chat">
+              <History size={16} /><span style={{ marginLeft: 6 }}>Open Support Chat &amp; History</span>
+            </button>
+            <button className="pill-btn pill-btn-secondary" style={{ width: '100%', marginBottom: 10 }}
+              onClick={() => startNewChat('contact')} id="btn-contact-support">
+              <Plus size={16} /><span style={{ marginLeft: 6 }}>Start a New Conversation</span>
             </button>
             <button className="pill-btn pill-btn-secondary" style={{ width: '100%' }}
-              onClick={() => { setFormType('report'); setMessage(''); setError(''); setView('form'); }} id="btn-report-problem">
+              onClick={() => startNewChat('report')} id="btn-report-problem">
               <AlertCircle size={16} /><span style={{ marginLeft: 6 }}>Report a Problem</span>
-            </button>
-          </div>
-
-          <div className="bubble-card" style={{ padding: '16px 18px', marginBottom: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
-              <History size={22} color="var(--text-primary)" />
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>Chat History</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Your past conversations — open, ended, rated or deleted</div>
-              </div>
-            </div>
-            <button className="pill-btn pill-btn-primary" style={{ width: '100%' }}
-              onClick={() => { setError(''); setView('history'); loadHistory(); }} id="btn-chat-history">
-              View Chat History
             </button>
           </div>
 
@@ -464,62 +478,11 @@ export const HelpSupportScreen: React.FC = () => {
         </div>
       )}
 
-      {view === 'history' && (
-        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div className="bubble-card" style={{ padding: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <History size={20} color="var(--text-primary)" />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>Chat History</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Open any past conversation — no need to re-enter your details</div>
-              </div>
-              <button className="pill-btn pill-btn-secondary" style={{ padding: '6px 10px', fontSize: 11 }} onClick={() => setView('menu')}>Back</button>
-            </div>
-            {historyLoading ? (
-              <div className="tag" style={{ fontFamily: 'inherit' }}>Loading your conversations...</div>
-            ) : !history.length ? (
-              <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13, padding: '24px 0' }}>
-                No conversations yet — tap "Start a Conversation" to talk to support.
-              </div>
-            ) : (
-              history.map(t => (
-                <div key={t.id} style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '12px 14px', marginBottom: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <div style={{ flex: 1, fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {t.subject || 'Support request'}
-                    </div>
-                    {t.status === 'closed' ? (
-                      <span className="tag" style={{ fontFamily: 'inherit' }}>Ended</span>
-                    ) : (
-                      <span className="tag" style={{ fontFamily: 'inherit', color: 'var(--accent-green)' }}>Open</span>
-                    )}
-                  </div>
-                  {t.preview && (
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {t.preview}
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
-                    {t.lastMessageAt != null && <span>{fmtDateTime(t.lastMessageAt)}</span>}
-                    {t.unread > 0 && <span style={{ color: 'var(--accent-red, #ef4444)' }}>{t.unread} new</span>}
-                    {t.rating != null && <span style={{ color: 'var(--accent-amber, #f59e0b)', letterSpacing: 1 }}>{'★'.repeat(t.rating)}</span>}
-                    {t.messageCount > 0 && <span>{t.messageCount} message{t.messageCount > 1 ? 's' : ''}</span>}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                    <button className="pill-btn pill-btn-primary" style={{ flex: 1, fontSize: 12 }} onClick={() => openHistoryChat(t)}>
-                      {t.status === 'closed' ? 'Reopen conversation' : 'Open chat'}
-                    </button>
-                    <button className="pill-btn pill-btn-secondary" style={{ fontSize: 12, padding: '8px 12px' }} onClick={() => deleteHistory(t.id)} aria-label="Delete conversation">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
+      {/*
+       * The standalone Chat History page is gone on purpose: the conversation
+       * list is now rendered INSIDE the chat card above, so the user picks
+       * between continuing an open chat and starting a new one in one place.
+       */}
       {view === 'chat' && (
         <div className="bubble-card" style={{ padding: 0, marginTop: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box', minWidth: 0, height: 'calc(100vh - 150px)', minHeight: 420, maxHeight: 620 }}>
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', rowGap: 6, gap: 8, padding: '12px 14px', borderBottom: '1px solid var(--border-color)' }}>
@@ -527,38 +490,49 @@ export const HelpSupportScreen: React.FC = () => {
               <MessageSquare size={16} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{adminName || 'COOP Support'}</div>
-              <div style={{ fontSize: 11, color: adminOnline ? 'var(--accent-green)' : 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                {adminOnline ? <Wifi size={11} /> : <WifiOff size={11} />}
-                {adminOnline ? 'Online' : 'Offline'}
-                {adminTyping && <span style={{ color: 'var(--accent-green)' }}> · typing…</span>}
+              {/* "Joe" over "Online" - the name the agent signed in the chat. */}
+              <div style={{ fontSize: 13, fontWeight: 700 }}>
+                {ticketId ? (adminName || 'COOP Support') : 'Support Chat'}
               </div>
+              {ticketId ? (
+                <div className="chat-pop-in" style={{ fontSize: 11, color: adminOnline ? 'var(--accent-green)' : 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {adminOnline ? <Wifi size={11} /> : <WifiOff size={11} />}
+                  {adminOnline ? 'Online' : 'Offline'}
+                  {adminTyping && <span style={{ color: 'var(--accent-green)' }}> · typing…</span>}
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Pick a conversation or start a new one</div>
+              )}
             </div>
-            {isClosed && <span className="tag" style={{ fontFamily: 'inherit' }}>Closed</span>}
-            <button
-              className="pill-btn pill-btn-secondary"
-              onClick={toggleChatHistory}
-              title="Chat history"
-              aria-label="Chat history"
-              aria-pressed={showChatHistory}
-              style={{
-                padding: '6px 10px', fontSize: 11, width: 'auto', flex: '0 0 auto',
-                background: showChatHistory ? 'var(--bg-glass-active)' : undefined
-              }}
-              id="btn-chat-history">
-              <History size={13} />
-              <span style={{ marginLeft: 4 }}>History</span>
-            </button>
-            <button
-              className="pill-btn pill-btn-secondary"
-              onClick={toggleChatFx}
-              title={chatFxMutedState ? 'Unmute chat sounds' : 'Mute chat sounds'}
-              aria-label={chatFxMutedState ? 'Unmute chat sounds' : 'Mute chat sounds'}
-              style={{ padding: '6px 8px', fontSize: 11, width: 'auto', flex: '0 0 auto' }}
-              id="btn-chat-sound">
-              {chatFxMutedState ? <VolumeX size={13} /> : <Volume2 size={13} />}
-            </button>
-            {!isClosed && (
+            {ticketId && isClosed && <span className="tag chat-pop-in" style={{ fontFamily: 'inherit' }}>Closed</span>}
+            {ticketId && (
+              <button
+                className="pill-btn pill-btn-secondary"
+                onClick={toggleChatHistory}
+                title="Chat history"
+                aria-label="Chat history"
+                aria-pressed={showChatHistory}
+                style={{
+                  padding: '6px 10px', fontSize: 11, width: 'auto', flex: '0 0 auto',
+                  background: showChatHistory ? 'var(--bg-glass-active)' : undefined
+                }}
+                id="btn-chat-history">
+                <History size={13} />
+                <span style={{ marginLeft: 4 }}>History</span>
+              </button>
+            )}
+            {ticketId && (
+              <button
+                className="pill-btn pill-btn-secondary"
+                onClick={toggleChatFx}
+                title={chatFxMutedState ? 'Unmute chat sounds' : 'Mute chat sounds'}
+                aria-label={chatFxMutedState ? 'Unmute chat sounds' : 'Mute chat sounds'}
+                style={{ padding: '6px 8px', fontSize: 11, width: 'auto', flex: '0 0 auto' }}
+                id="btn-chat-sound">
+                {chatFxMutedState ? <VolumeX size={13} /> : <Volume2 size={13} />}
+              </button>
+            )}
+            {ticketId && !isClosed && (
               <button
                 className="pill-btn pill-btn-secondary"
                 style={{ padding: '6px 10px', fontSize: 11, width: 'auto', flex: '0 0 auto' }}
@@ -568,6 +542,62 @@ export const HelpSupportScreen: React.FC = () => {
             )}
           </div>
 
+          {!ticketId ? (
+            /* ------------- Chat home: history lives INSIDE the chat ------------- */
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 14px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button className="pill-btn pill-btn-primary" style={{ width: '100%' }}
+                onClick={() => startNewChat('contact')} id="btn-start-new-chat">
+                <Plus size={16} /><span style={{ marginLeft: 6 }}>Start a new chat</span>
+              </button>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 2 }}>
+                Your conversations
+              </div>
+              {historyLoading ? (
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Loading your conversations…</div>
+              ) : !history.length ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13, padding: '24px 0' }}>
+                  No conversations yet — tap “Start a new chat” to talk to support.
+                </div>
+              ) : (
+                history.map(t => (
+                  <div key={t.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 12,
+                    background: 'var(--bg-glass)', border: '1px solid var(--border-color)'
+                  }}>
+                    <button
+                      onClick={() => openHistoryChat(t)}
+                      style={{ flex: '1 1 auto', minWidth: 0, textAlign: 'left', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}
+                      aria-label={`${t.status === 'closed' ? 'View' : 'Continue'} ${t.subject || 'conversation'}`}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t.subject || 'Support request'}
+                        </span>
+                        {t.status === 'closed'
+                          ? <span className="tag" style={{ fontFamily: 'inherit', fontSize: 10 }}>Ended</span>
+                          : <span className="tag chat-pop-in" style={{ fontFamily: 'inherit', fontSize: 10, color: 'var(--accent-green)' }}>Open</span>}
+                        {t.unread > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-red, #ef4444)' }}>{t.unread} new</span>}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                        {t.rating != null ? `${'★'.repeat(t.rating)} · ` : ''}
+                        {t.lastMessageAt != null ? `${fmtDateTime(t.lastMessageAt)} · ` : ''}
+                        {t.messageCount > 0 ? `${t.messageCount} message${t.messageCount > 1 ? 's' : ''}` : 'no messages'}
+                      </div>
+                      {t.preview && (
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                          {t.preview.replace(/^\[([^\]]+)\]\s*/, '')}
+                        </div>
+                      )}
+                    </button>
+                    <button className="pill-btn pill-btn-secondary" style={{ padding: '6px 8px', width: 'auto', flex: '0 0 auto' }}
+                      onClick={() => deleteHistory(t.id)} aria-label="Delete conversation">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+          <>
           <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 6px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {messages.length === 0 && (
               <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13, padding: '20px 0' }}>No messages yet — say hello!</div>
@@ -576,7 +606,7 @@ export const HelpSupportScreen: React.FC = () => {
               const mine = m.sender === 'user';
               const readByAdmin = adminLastSeenAt != null && adminLastSeenAt >= m.createdAt;
               return (
-                <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                <div key={m.id} className="chat-bubble-in" style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                   <div style={{
                     maxWidth: '78%', borderRadius: 14, padding: '8px 12px',
                     background: mine ? 'var(--accent-green)' : 'var(--bg-glass-active)',
@@ -595,8 +625,13 @@ export const HelpSupportScreen: React.FC = () => {
               );
             })}
             {adminTyping && (
-              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <div style={{ background: 'var(--bg-glass-active)', borderRadius: 14, padding: '8px 12px', fontSize: 13, color: 'var(--text-tertiary)' }}>Typing…</div>
+              <div className="chat-bubble-in" style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <div style={{ background: 'var(--bg-glass-active)', borderRadius: 14, padding: '10px 14px', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span className="chat-typing-dot" />
+                  <span className="chat-typing-dot" />
+                  <span className="chat-typing-dot" />
+                  <span style={{ fontSize: 11, marginLeft: 4 }}>{adminName || 'Support'} is typing</span>
+                </div>
               </div>
             )}
 
@@ -623,21 +658,23 @@ export const HelpSupportScreen: React.FC = () => {
                       onChange={e => setRateComment(e.target.value)}
                       maxLength={300}
                     />
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="pill-btn pill-btn-primary" style={{ flex: 1 }} onClick={submitRating} disabled={sending || !rateStars}>
-                        {sending ? 'Sending...' : 'Send rating'}
-                      </button>
-                      <button className="pill-btn pill-btn-secondary" style={{ flex: 1 }} onClick={continueChat} disabled={sending}>
-                        <RotateCcw size={14} /><span style={{ marginLeft: 4 }}>Continue conversation</span>
-                      </button>
-                    </div>
+                    <button className="pill-btn pill-btn-primary" style={{ width: '100%' }} onClick={submitRating} disabled={sending || !rateStars}>
+                      {sending ? 'Sending...' : 'Send rating'}
+                    </button>
                   </div>
                 )}
-                {rating != null && (
-                  <button className="pill-btn pill-btn-secondary" style={{ marginTop: 10, width: '100%' }} onClick={continueChat} disabled={sending}>
-                    <RotateCcw size={14} /><span style={{ marginLeft: 4 }}>Continue conversation</span>
-                  </button>
+                {rating != null && (rateComment.trim() || savedRatingComment) && (
+                  <div style={{ marginTop: 6, fontSize: 11, fontStyle: 'italic', color: 'var(--text-secondary)', wordBreak: 'break-word' }}>
+                    “{rateComment.trim() || savedRatingComment}”
+                  </div>
                 )}
+                {/* An ended conversation is terminal: no "continue" - only a new chat. */}
+                <button className="pill-btn pill-btn-secondary" style={{ marginTop: 10, width: '100%' }} onClick={startNewChatFromEnded} disabled={sending} id="btn-start-new-after-end">
+                  <Plus size={14} /><span style={{ marginLeft: 4 }}>Start a new chat</span>
+                </button>
+                <div style={{ marginTop: 6, fontSize: 10.5, color: 'var(--text-tertiary)' }}>
+                  This chat can no longer be continued{adminName ? ` — thanks, ${adminName}` : ''}.
+                </div>
               </div>
             )}
           </div>
@@ -730,6 +767,8 @@ export const HelpSupportScreen: React.FC = () => {
             </button>
           </div>
           {error && <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-red, #ef4444)', padding: '0 14px 8px 14px' }}>{error}</div>}
+          </>
+          )}
         </div>
       )}
     </div>

@@ -139,6 +139,7 @@
         <a data-page="wallets" onclick="showSection('wallets')">Wallets</a>
         <a data-page="transactions" onclick="showSection('transactions')">Transactions</a>
         <a data-page="support" onclick="showSection('support')">Support Chat</a>
+        <a data-page="ratings" onclick="showSection('ratings')">Chat Ratings</a>
         <div class="navgroup">Economy</div>
         <a data-page="coop" onclick="showSection('coop')">Coopoint / COOP</a>
         <a data-page="swap" onclick="showSection('swap')">Swap</a>
@@ -161,6 +162,7 @@
       <section class="section" id="sec-wallets"><div id="body-wallets"></div></section>
       <section class="section" id="sec-transactions"><div id="body-transactions"></div></section>
       <section class="section" id="sec-support"><div id="body-support"></div></section>
+      <section class="section" id="sec-ratings"><div id="body-ratings"></div></section>
       <section class="section" id="sec-coop"><div id="body-coop"></div></section>
       <section class="section" id="sec-swap"><div id="body-swap"></div></section>
       <section class="section" id="sec-mining"><div id="body-mining"></div></section>
@@ -267,6 +269,7 @@ const PAGE_META = {
   wallets: ['Wallets', 'Wallet balances and activity across the network (no private secrets shown)'],
   transactions: ['Transactions', 'Full send / receive / swap / mining / boost / task activity - internal wallet activity only'],
   support: ['Support Chat', 'Live user <-> admin conversations. Reply to tickets and watch online / typing indicators'],
+  ratings: ['Chat Ratings', 'Customer-service performance: every rating + comment a user left, grouped by the support agent (name signed in the chat)'],
   coop: ['Coopoint / COOP', 'The pre-TGE economy: Coopoint mined / claimed / swapped + the COOP reward pool'],
   swap: ['Swap', 'Coopoint <-> COOP conversions at the configured ratio (points-per-COOP from admin settings)'],
   mining: ['Mining', 'Mining sessions, claims and rewards - from the wallet mining tables'],
@@ -293,6 +296,12 @@ async function adjustBalance(walletId) {
 
 function showSection(name) {
   _current = name;
+  // Leaving the support pane must stop its 3s live poll, otherwise the tick
+  // keeps patching (and could re-draw over) whatever view is on screen.
+  if (name !== 'support' && typeof stopSupportPoll === 'function') {
+    stopSupportPoll();
+    SUPPORT_TICKET = null;
+  }
   var secs = document.querySelectorAll('.section');
   for (var i = 0; i < secs.length; i++) secs[i].classList.remove( 'active');
   var sec = $( 'sec-' + name); if (sec) sec.classList.add( 'active');
@@ -358,6 +367,7 @@ const loaders = {
   wallets: renderWallets,
   transactions: renderTransactions,
   support: renderSupport,
+  ratings: renderRatings,
   coop: renderCoop,
   swap: renderSwap,
   mining: renderMining,
@@ -962,8 +972,24 @@ var ADMIN_NAME = sessionStorage.getItem('coop_admin_name') || null;
 var SUPPORT_TICKET = null;
 var SUPPORT_ADMIN_NAME = null;
 var SUPPORT_POLL = null;
+// Rate-limit stamp for the "admin is typing" RPC. Declared here because it is
+// assigned in two places below; without this line it was an implicit global and
+// any page that ran in strict mode would throw ReferenceError on the 1st keystroke.
+var _supportTypingSentAt = 0;
+// Last rendered message signature, so the 3s poll does not rebuild the message
+// list (and therefore never touches the reply box) when nothing changed.
+var _supportThreadSig = null;
+
+function stopSupportPoll() {
+  if (SUPPORT_POLL) { clearInterval(SUPPORT_POLL); SUPPORT_POLL = null; }
+}
 
 function renderSupport() {
+  // List view: ALWAYS stop the live-thread poll first. A stale poll ticking
+  // while the admin is on the list used to rebuild/replace the pane mid-use
+  // (this is what made the chat box + reply text vanish while typing).
+  stopSupportPoll();
+  SUPPORT_TICKET = null;
   var el = $( 'body-support');
   el.innerHTML = '<div class="tag">Loading conversations...</div>';
   return rpc( 'rpc_support_admin_list', { p_admin_key: null }).then(function (rows) {
@@ -1068,7 +1094,7 @@ function supportMessagesHtml(d) {
   if (!msgs.length) h += '<div class="tag">No messages yet</div>';
   msgs.forEach(function (m) {
     var isAdmin = m.sender === 'admin';
-    var label = isAdmin ? (SUPPORT_ADMIN_NAME || 'You') : 'User';
+    var label = isAdmin ? (t.admin_name || SUPPORT_ADMIN_NAME || 'Admin') : 'User';
     h += '<div style="display:flex;justify-content:' + (isAdmin ? 'flex-end' : 'flex-start') + '">';
     h += '<div style="max-width:75%;padding:8px 12px;border-radius:14px;background:' + (isAdmin ? 'var(--accent-green)' : 'var(--bg-surface)') + ';color:' + (isAdmin ? '#fff' : 'var(--text-primary)') + ';font-size:13px;line-height:1.45">';
     h += '<div style="white-space:pre-wrap;word-break:break-word">' + esc(m.body) + '</div>';
@@ -1076,7 +1102,22 @@ function supportMessagesHtml(d) {
     h += '</div></div>';
   });
   if (closed) {
-    h += '<div style="text-align:center;margin-top:6px"><span class="tag" style="background:var(--accent-red);color:#fff;padding:3px 12px;border-radius:10px;display:inline-block">Chat ended by ' + esc(t.closed_by === 'user' ? 'you' : 'admin') + '</span></div>';
+    h += '<div class="chat-pop-in" style="text-align:center;margin-top:6px">';
+    h += '<span class="tag" style="background:var(--accent-red);color:#fff;padding:3px 12px;border-radius:10px;display:inline-block">Chat ended by ' +
+      esc(t.closed_by === 'user' ? 'the user' : 'admin') + (t.admin_name ? ' (' + esc(t.admin_name) + ')' : '') + '</span>';
+    // The user's rating + comment land here, so the agent sees the feedback.
+    if (t.rating != null) {
+      h += '<div style="margin-top:8px;padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-color,#333);border-radius:10px;display:inline-block;max-width:90%;text-align:left">';
+      h += '<div style="font-size:11px;color:var(--text-tertiary)">User rating</div>';
+      h += '<div style="margin-top:2px">' + starsHtml(t.rating) + '</div>';
+      if (t.rating_comment) {
+        h += '<div style="font-size:12px;margin-top:4px;white-space:pre-wrap;word-break:break-word">' + esc(t.rating_comment) + '</div>';
+      }
+      h += '</div>';
+    } else if (t.closed_by === 'user') {
+      h += '<div style="margin-top:6px;font-size:11px;color:var(--text-tertiary)">Awaiting the user\'s rating</div>';
+    }
+    h += '</div>';
   }
   return h;
 }
@@ -1084,48 +1125,56 @@ function supportMessagesHtml(d) {
 // Incremental poll refresh: update only the presence line + messages.
 // NEVER rebuild the reply box / status chrome, otherwise the admin loses
 // their typed text, caret, and focus every 3 seconds.
+// Incremental poll refresh. THIS FUNCTION MUST NEVER REBUILD THE PANE.
+// Re-rendering from here is exactly what used to make the chat box and the
+// admin's typed text disappear mid-sentence: every rebuild created a brand-new
+// empty <textarea>. It now only patches the pieces that genuinely changed.
 function updateSupportThread(d) {
-  if (!$( 'support-thread')) { renderSupportThread(d); return; }
-  var p = $( 'support-presence'); if (p) p.innerHTML = supportPresenceHtml(d);
+  var thr = $( 'support-thread');
+  // Not on a thread any more (admin went back to the list or to another
+  // section): swallow the tick instead of drawing over the current view.
+  if (!thr || !SUPPORT_TICKET) return;
+
   var t = d.ticket || {};
   var closed = t.status === 'closed';
-  // Update user typing indicator (persists across 3s polls, not wiped by renderSupportThread)
+
+  var p = $( 'support-presence'); if (p) p.innerHTML = supportPresenceHtml(d);
+
+  // Online / typing line for the user.
   var ut = $( 'support-user-typing');
   if (ut) ut.style.display = (!!d.user_typing && !closed) ? '' : 'none';
-  // Update toolbar buttons when closed state changes
+
+  // Toolbar: only the End-chat button toggles. An ended chat is TERMINAL, so
+  // there is deliberately no Reopen button any more.
   var toolbar = $( 'support-toolbar');
   if (toolbar) {
     var endBtn = toolbar.querySelector('[onclick="closeTicket()"]');
-    var reopenBtn = toolbar.querySelector('[onclick="reopenTicket()"]');
-    if (closed) {
-      if (!reopenBtn) {
-        reopenBtn = document.createElement('button');
-        reopenBtn.className = 'btn btn-sm';
-        reopenBtn.style.cssText = 'margin-left:6px;background:var(--accent-green);color:#fff';
-        reopenBtn.textContent = 'Reopen chat';
-        reopenBtn.setAttribute('onclick', 'reopenTicket()');
-        toolbar.appendChild(reopenBtn);
-      }
-      if (endBtn) endBtn.style.display = 'none';
-    } else {
-      if (endBtn) endBtn.style.display = '';
-      if (reopenBtn) reopenBtn.remove();
-    }
+    if (endBtn) endBtn.style.display = closed ? 'none' : '';
   }
-  // Make reply box readonly when chat is ended
+
+  // Reply box: ONLY touch it when the ended-state actually flips. Writing
+  // readOnly/placeholder on every poll can disturb the caret while typing.
   var replyBox = $( 'support-reply');
   if (replyBox) {
-    replyBox.readOnly = closed;
-    replyBox.placeholder = closed ? 'Chat ended - tap Reopen to reply' : 'Type a reply...';
+    var wantReadOnly = closed;
+    if (replyBox.readOnly !== wantReadOnly) {
+      replyBox.readOnly = wantReadOnly;
+      replyBox.placeholder = wantReadOnly
+        ? 'Chat ended - the user must start a new chat'
+        : 'Type a reply...';
+    }
   }
   var sendBtn = $( 'support-send-btn');
-  if (sendBtn) sendBtn.disabled = closed;
-  var ut = $( 'support-user-typing');
-  if (ut && d.ticket) {
-    ut.style.display = (!!d.user_typing && d.ticket.status !== 'closed') ? '' : 'none';
-  }
-  var thr = $( 'support-thread');
-  if (thr) {
+  if (sendBtn && sendBtn.disabled !== closed) sendBtn.disabled = closed;
+
+  // Messages: rebuild only when the content signature changed, so a poll that
+  // brings nothing new does zero DOM work and can never fight the reply box.
+  var msgs = d.messages || [];
+  var sig = (t.status || '') + '|' + msgs.length + '|' +
+    (msgs.length ? msgs[msgs.length - 1].id : '') + '|' +
+    (t.rating == null ? '' : t.rating) + '|' + (t.rating_comment || '');
+  if (_supportThreadSig !== sig) {
+    _supportThreadSig = sig;
     var nearBottom = thr.scrollHeight - thr.scrollTop - thr.clientHeight < 60;
     thr.innerHTML = supportMessagesHtml(d);
     if (nearBottom) thr.scrollTop = thr.scrollHeight;
@@ -1137,9 +1186,12 @@ function renderSupportThread(d) {
   if (!el) return;
   var t = d.ticket || {};
   var closed = t.status === 'closed';
+  // Reset the poll's change signature: a fresh pane must always paint its
+  // messages once, even if they look identical to the previous ticket's.
+  _supportThreadSig = null;
   var h = '<div id="support-toolbar" class="toolbar"><button class="btn btn-secondary btn-sm" onclick="closeSupportView()">&larr; Back to tickets</button>';
+  // No Reopen button: an ended chat is terminal (the user starts a new one).
   if (!closed) h += '<button class="btn btn-sm" style="margin-left:6px;background:var(--accent-red);color:#fff" onclick="closeTicket()">End chat</button>';
-  else h += '<button class="btn btn-sm" style="margin-left:6px;background:var(--accent-green);color:#fff" onclick="reopenTicket()">Reopen chat</button>';
   h += '<button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="toggleSupportHistory()">History</button>';
   h += '</div>';
   h += '<div class="card"><div class="card-title">Conversation <span class="mono" style="font-size:11px;font-weight:400">' + shortAddr(t.id) + '</span></div>';
@@ -1152,7 +1204,7 @@ function renderSupportThread(d) {
     ' <span id="support-presence" style="font-size:11px">' + supportPresenceHtml(d) + '</span></span></div>';
   h += '</div>';
   h += '<div class="card"><div class="card-title">Messages</div><div id="support-thread" style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding:4px 2px">' + supportMessagesHtml(d) + '</div>';
-  h += '<div class="field" style="margin-top:12px"><label>Reply as admin</label><textarea id="support-reply" rows="5" style="width:100%;resize:vertical;min-height:80px" placeholder="' + (closed ? 'Chat ended - tap Reopen to reply' : 'Type a reply...') + '"' + (closed ? ' readonly' : '') + '></textarea></div>';
+  h += '<div class="field" style="margin-top:12px"><label>Reply as admin</label><textarea id="support-reply" rows="5" style="width:100%;resize:vertical;min-height:80px" placeholder="' + (closed ? 'Chat ended - the user must start a new chat' : 'Type a reply...') + '"' + (closed ? ' readonly' : '') + '></textarea></div>';
   h += '<div class="btn-row" style="align-items:center;gap:8px"><button class="btn" onclick="sendAdminReply()" id="support-send-btn"' + (closed ? ' disabled' : '') + '>Send Reply</button>' +
     '<span id="support-admin-typing-indicator" style="display:none;font-size:11px;color:var(--accent-green);white-space:nowrap">● typing…</span></div>';
   h += '<div id="support-msg" class="msg"></div></div>';
@@ -1214,7 +1266,7 @@ function sendAdminTypingRpc() {
 function sendAdminReply() {
   var box = $( 'support-reply');
   if (!box || !SUPPORT_TICKET) return;
-  if (box.readOnly) { showMsg( 'support-msg', 'Chat is ended. Tap Reopen to reply.', true); return; }
+  if (box.readOnly) { showMsg( 'support-msg', 'This chat has ended. The user must start a new chat.', true); return; }
   var body = box.value.trim();
   if (!body) { showMsg( 'support-msg', 'Write a reply first', true); return; }
   var btn = $( 'support-send-btn'); if (btn) btn.disabled = true;
@@ -1236,18 +1288,20 @@ function showSupportHistory() {
 
 function closeTicket() {
   if (!SUPPORT_TICKET) return;
-  rpc( 'rpc_support_admin_close', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET }).then(function () {
-    toast('Chat ended by admin.');
+  // The agent's name is recorded with the closure so the user's rating scores
+  // the right customer-service person in the Chat Ratings section.
+  var name = SUPPORT_ADMIN_NAME || askAdminName(false) || 'Support';
+  rpc( 'rpc_support_admin_close', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET, p_admin_name: name }).then(function () {
+    toast('Chat ended by ' + name + '. The user can now rate it.');
     return adminPollSupport();
   }).catch(function (err) { toast('Failed to close: ' + (err.message || ''), true); });
 }
 
+// An ended conversation is TERMINAL. There is no reopen on either side: the
+// user has to start a new chat, which is why this function only explains that
+// instead of calling a reopen RPC.
 function reopenTicket() {
-  if (!SUPPORT_TICKET) return;
-  rpc( 'rpc_support_admin_reopen', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET }).then(function () {
-    toast('Chat reopened.');
-    return adminPollSupport();
-  }).catch(function (err) { toast('Failed to reopen: ' + (err.message || ''), true); });
+  toast('This chat has ended and cannot be reopened. The user must start a new chat.', true);
 }
 function toggleSupportHistory() {
   var histEl = $('support-history-panel');
@@ -1274,6 +1328,76 @@ function toggleSupportHistory() {
     panel.innerHTML = h;
   }).catch(function(err) {
     panel.innerHTML = '<div class="msg msg-error">Failed: ' + esc(err.message || '') + '</div>';
+  });
+}
+
+/* ---------- CHAT RATINGS (customer-service performance) ---------- */
+// Powered by rpc_support_admin_ratings: every rating + comment a user left,
+// plus a per-agent summary. The agent name is the one signed in the chat.
+function renderRatings() {
+  var el = $('body-ratings');
+  if (!el) return;
+  el.innerHTML = '<div class="tag">Loading ratings...</div>';
+  return rpc('rpc_support_admin_ratings', { p_admin_key: null }).then(function (d) {
+    d = d || {};
+    var rows = d.ratings || [];
+    var byAdmin = d.by_admin || [];
+
+    var h = '';
+
+    // --- Per-agent performance summary -------------------------------------
+    h += '<div class="card"><div class="card-title">Performance by customer-service agent</div>';
+    h += '<div class="hint" style="margin-bottom:12px">Only chats that were rated are counted. The agent name is the one the admin signed when replying / ending the chat.</div>';
+    if (!byAdmin.length) {
+      h += '<div class="tag">No ratings yet. Ratings appear here as soon as a user rates an ended conversation.</div>';
+    } else {
+      var tot = 0, cnt = 0;
+      byAdmin.forEach(function (a) { tot += Number(a.average || 0) * Number(a.ratings || 0); cnt += Number(a.ratings || 0); });
+      h += '<div class="stat-grid">';
+      h += stat('Agents rated', byAdmin.length, 'blue');
+      h += stat('Total ratings', cnt, 'green');
+      h += stat('Average score', cnt ? (Math.round((tot / cnt) * 100) / 100) : 0, 'amber');
+      h += '</div>';
+      h += '<div class="table-wrap"><table><thead><tr><th>Customer service</th><th>Ratings</th><th>Average</th><th>5-star</th><th>With comment</th><th>Score</th></tr></thead><tbody>';
+      byAdmin.forEach(function (a) {
+        h += '<tr><td>' + esc(a.admin_name || 'Unassigned') + '</td>';
+        h += '<td>' + fmtNum(a.ratings) + '</td>';
+        h += '<td>' + (a.average == null ? '—' : esc(String(a.average))) + '</td>';
+        h += '<td>' + fmtNum(a.five_star) + '</td>';
+        h += '<td>' + fmtNum(a.with_comment) + '</td>';
+        h += '<td>' + starsHtml(Math.round(Number(a.average || 0))) + '</td></tr>';
+      });
+      h += '</tbody></table></div>';
+    }
+    h += '</div>';
+
+    // --- Every individual rating + comment ---------------------------------
+    h += '<div class="card"><div class="card-title">All ratings &amp; comments (' + rows.length + ')</div>';
+    if (!rows.length) {
+      h += '<div class="tag">Nothing here yet.</div>';
+    } else {
+      h += '<div class="table-wrap"><table><thead><tr><th>Rated</th><th>Customer service</th><th>Score</th><th>Comment</th><th>Ended by</th><th>User</th><th>Subject</th></tr></thead><tbody>';
+      rows.forEach(function (r) {
+        h += '<tr>';
+        h += '<td style="font-size:11px">' + fmtDate(r.closed_at || r.rating_created_at) + '</td>';
+        h += '<td>' + esc(r.admin_name || 'Unassigned') + '</td>';
+        h += '<td>' + starsHtml(r.rating) + ' <span style="font-size:11px">(' + esc(String(r.rating)) + '/5)</span></td>';
+        h += '<td style="max-width:320px;white-space:pre-wrap;word-break:break-word;font-size:12px">' +
+          (r.rating_comment ? esc(r.rating_comment) : '<span style="color:var(--text-tertiary)">no comment</span>') + '</td>';
+        h += '<td>' + pill(r.closed_by === 'user' ? 'user' : 'admin') + '</td>';
+        h += '<td>' + esc(r.user_name || 'User') + '<div class="mono" style="font-size:10px">' + shortAddr(r.address || r.wallet_id) + '</div></td>';
+        h += '<td style="font-size:12px">' + esc(r.subject || '') + '</td>';
+        h += '</tr>';
+      });
+      h += '</tbody></table></div>';
+    }
+    h += '</div>';
+
+    el.innerHTML = h;
+  }).catch(function (err) {
+    el.innerHTML = '<div class="msg msg-error" style="display:flex">' + esc(err.message || 'load failed') +
+      ' <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="renderRatings()">Retry</button>' +
+      '<div class="hint" style="margin-top:6px">If this says the function does not exist, run supabase/migration-v9-support-ratings.sql in Supabase.</div></div>';
   });
 }
 

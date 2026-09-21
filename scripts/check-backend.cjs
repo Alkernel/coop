@@ -57,6 +57,7 @@ const CHECKS = [
   ['rpc_support_admin_reply', { p_admin_key: null, p_ticket_id: NIL, p_body: 'x', p_admin_name: 'Test' }, 'v8'],
   ['rpc_support_admin_close', { p_admin_key: null, p_ticket_id: NIL }, 'v7'],
   ['rpc_support_admin_reopen', { p_admin_key: null, p_ticket_id: NIL }, 'v8'],
+  ['rpc_support_admin_ratings', { p_admin_key: null }, 'v9'],
   ['rpc_claim_mining', { p_wallet_id: NIL }, 'v7'],
   ['rpc_start_mining', { p_wallet_id: NIL }, 'v7'],
   ['rpc_mining_status', { p_wallet_id: NIL }, 'core']
@@ -88,7 +89,19 @@ const CHECKS = [
   } else {
     console.log('ACTION REQUIRED — these are not on the database yet:');
     for (const m of missing) console.log('  - ' + m);
-    console.log('\nOpen the Supabase Dashboard -> SQL Editor, paste the contents of');
-    console.log('supabase/migration-v8-support-history.sql and click Run. Then re-run this script.');
+    // Point at exactly the migration files that are still missing.
+    const needed = [...new Set(missing.map(m => (m.match(/\(needs migration ([^)]+)\)/) || [])[1]).filter(Boolean))];
+    const files = needed.map(v => {
+      const map = {
+        v7: 'supabase/migration-v7-claim-support.sql',
+        v8: 'supabase/migration-v8-support-history.sql',
+        v9: 'supabase/migration-v9-support-ratings.sql'
+      };
+      return map[v] || v;
+    });
+    console.log('\nOpen the Supabase Dashboard -> SQL Editor and run these in order:');
+    files.forEach(f => console.log('  ' + f));
+    console.log('\nThen re-run this script. (v9 also unblocks MINING CLAIM: it rebuilds the');
+    console.log('transactions CHECK constraints so currency \'Coopoints\' is accepted.)');
   }
 })();

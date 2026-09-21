@@ -511,6 +511,54 @@ body {
   display: block;
 }
 
+/* ---------- Support chat animations ---------- */
+
+/* A message bubble sliding in (used for every new chat message) */
+@keyframes chatBubbleIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.chat-bubble-in {
+  animation: chatBubbleIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The three bouncing dots of the "someone is typing" bubble */
+@keyframes chatTypingDot {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30%           { opacity: 1;    transform: translateY(-3px); }
+}
+
+.chat-typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  animation: chatTypingDot 1.2s infinite ease-in-out;
+}
+
+.chat-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.chat-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+/* Small pop used when a live indicator (online / typing / closed) appears */
+@keyframes chatPopIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.chat-pop-in {
+  animation: chatPopIn 0.18s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-bubble-in,
+  .chat-typing-dot,
+  .chat-pop-in {
+    animation: none;
+  }
+}
+
 /* Logo glow (soft lighting so it shows well on dark theme) */
 .logo-glow {
   filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.25));
