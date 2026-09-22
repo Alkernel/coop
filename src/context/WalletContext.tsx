@@ -63,6 +63,23 @@ interface WalletContextType {
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
+// Every screen the app can render. Used to validate a screen restored from the
+// browser history so a stale value can never blank the UI.
+const VALID_SCREENS: ScreenName[] = [
+  'welcome', 'login', 'signup', 'home', 'mining', 'swap', 'send', 'receive',
+  'history', 'price_boost', 'tasks', 'menu', 'settings', 'wallet_details',
+  'help_support', 'about', 'security', 'locked', 'asset_detail', 'tx_detail'
+];
+
+// The bottom-nav destinations. Moving BETWEEN them replaces the current entry
+// instead of stacking, so the back stack can never fill up with tab ping-pong
+// (which made "back" look like it did nothing).
+const ROOT_TABS: ScreenName[] = ['home', 'mining', 'tasks', 'menu'];
+
+// Screens reachable before the wallet is unlocked. "Back" must never walk out
+// of these into the dashboard, and must never skip the lock screen.
+const PRE_AUTH_SCREENS: ScreenName[] = ['welcome', 'login', 'signup', 'locked'];
+
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentScreen, setCurrentScreen] = useState<ScreenName>('welcome');
   const [screenHistory, setScreenHistory] = useState<ScreenName[]>(['welcome']);
@@ -79,22 +96,73 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const pollRef = useRef<number | null>(null);
 
-  const navigateTo = useCallback((screen: ScreenName) => {
-    setScreenHistory(prev => [...prev, screen]);
-    setCurrentScreen(screen);
-    localStorage.setItem('coop_current_screen', screen);
+  // --- Navigation internals ------------------------------------------------
+  // The screen stack is mirrored in refs so a navigation decision is always
+  // synchronous. The previous implementation computed the target screen INSIDE
+  // a setScreenHistory() updater, which React is allowed to call twice or defer
+  // - that is why "back" silently did nothing on some screens.
+  const historyRef = useRef<ScreenName[]>(['welcome']);
+  const screenRef = useRef<ScreenName>('welcome');
+  const navDepthRef = useRef(0);   // our own entries above the browser baseline
+  const selfPopsRef = useRef(0);   // popstate events our own history.back() will cause
+  const selfPopDeadlineRef = useRef(0);
+
+  const commitHistory = useCallback((next: ScreenName[]) => {
+    historyRef.current = next;
+    setScreenHistory(next);
   }, []);
 
-  const goBack = useCallback(() => {
-    setScreenHistory(prev => {
-      if (prev.length <= 1) return prev;
-      const updated = [...prev];
-      updated.pop();
-      const last = updated[updated.length - 1];
-      setCurrentScreen(last);
-      return updated;
-    });
+  const applyScreen = useCallback((screen: ScreenName) => {
+    screenRef.current = screen;
+    setCurrentScreen(screen);
+    try { localStorage.setItem('coop_current_screen', screen); } catch { /* ignore */ }
   }, []);
+
+  const navigateTo = useCallback((screen: ScreenName) => {
+    const prev = historyRef.current;
+    const top = prev[prev.length - 1];
+    if (top === screen) return;                       // already there - don't stack
+    const next = (ROOT_TABS.includes(screen) && ROOT_TABS.includes(top))
+      ? [...prev.slice(0, -1), screen]                // tab switch replaces
+      : [...prev, screen];
+    commitHistory(next);
+    applyScreen(screen);
+    // Mirror the move into the real browser history so the browser / Android
+    // back button walks the wallet instead of leaving the web app.
+    navDepthRef.current += 1;
+    try {
+      window.history.pushState({ coopScreen: screen, coopDepth: navDepthRef.current }, '');
+    } catch { /* ignore */ }
+  }, [commitHistory, applyScreen]);
+
+  const goBack = useCallback(() => {
+    const cur = screenRef.current;
+
+    // Before the wallet is unlocked there is nothing behind us except the
+    // welcome screen - never the dashboard.
+    if (!account || PRE_AUTH_SCREENS.includes(cur)) {
+      const target: ScreenName = (cur === 'login' || cur === 'signup') ? 'welcome' : cur;
+      commitHistory([target]);
+      applyScreen(target);
+      return;
+    }
+
+    const prev = historyRef.current;
+    // No history to pop (the classic case: the page was refreshed straight into
+    // a sub-screen such as Swap). Fall back to the dashboard - never out of the
+    // app, which is what used to happen.
+    const next: ScreenName[] = prev.length > 1 ? prev.slice(0, -1) : ['home'];
+    const target = next[next.length - 1];
+    commitHistory(next);
+    applyScreen(target);
+    // Walk the browser history back too so the two stacks stay aligned.
+    if (navDepthRef.current > 0) {
+      navDepthRef.current -= 1;
+      selfPopsRef.current += 1;
+      selfPopDeadlineRef.current = Date.now() + 800;
+      try { window.history.back(); } catch { /* ignore */ }
+    }
+  }, [account, commitHistory, applyScreen]);
 
   const addNotification = useCallback((title: string, message: string, type: AppNotification['type'] = 'info') => {
     setNotifications(prev => [
@@ -146,8 +214,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         await refreshAccountData(acc);
         // Restore the exact page the user was on, or default to home
         const savedScreen = localStorage.getItem('coop_current_screen') as ScreenName | null;
-        const validScreens: ScreenName[] = ['home', 'mining', 'swap', 'send', 'receive', 'history', 'price_boost', 'tasks', 'menu', 'settings', 'wallet_details', 'help_support', 'about', 'security', 'asset_detail'];
-        const restoredScreen = savedScreen && validScreens.includes(savedScreen) ? savedScreen : 'home';
+        const restoredScreen = savedScreen && VALID_SCREENS.includes(savedScreen) ? savedScreen : 'home';
+        // Seed both the state and the navigation refs so "back" works
+        // immediately, even though the stack starts with a single entry.
+        historyRef.current = [restoredScreen];
+        screenRef.current = restoredScreen;
         setCurrentScreen(restoredScreen);
         setScreenHistory([restoredScreen]);
       } catch (e) {
@@ -165,10 +236,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     dbService.getSettings().then(setSettings).catch(e => console.warn('Settings load failed:', e));
   }, []);
 
-  // Poll the server for mining progress (survives refresh/reopen)
+  // Poll the server for mining progress (survives refresh/reopen).
+  // Keyed on the wallet ID, not the account object: the account gets a new
+  // identity on every poll, which used to tear down and rebuild this interval
+  // every 15 seconds for no reason.
+  const walletId = account?.id ?? null;
   useEffect(() => {
-    if (!account) return;
-    const poll = () => refreshMiningStatus(account.id);
+    if (!walletId) return;
+    const poll = () => refreshMiningStatus(walletId);
     pollRef.current = window.setInterval(poll, 15000);
     const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
     document.addEventListener('visibilitychange', onVisible);
@@ -176,7 +251,84 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (pollRef.current) window.clearInterval(pollRef.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [account, refreshMiningStatus]);
+  }, [walletId, refreshMiningStatus]);
+
+  // --- Browser / hardware back button --------------------------------------
+  // The app never registered a popstate handler, so pressing back left the SPA
+  // ("the web app closed"). Now every back press walks the wallet instead, and
+  // at the root it re-arms so the app can never be exited with back.
+  // Depends on a BOOLEAN, not the account object, so the baseline is not
+  // re-written (and the depth counter not reset) on every mining poll.
+  const authed = Boolean(account);
+  useEffect(() => {
+    if (!authed) return;
+    // Baseline entry: gives the very first back press somewhere inside the app
+    // to pop TO rather than falling out to the previous website.
+    navDepthRef.current = 0;
+    try { window.history.replaceState({ coopScreen: screenRef.current, coopDepth: 0 }, ''); } catch { /* ignore */ }
+
+    const onPop = (ev: PopStateEvent) => {
+      const st = (ev.state || null) as { coopScreen?: ScreenName; coopDepth?: number } | null;
+      const depth = typeof st?.coopDepth === 'number' ? st.coopDepth : 0;
+
+      // Triggered by our own in-app back button: the screen is already applied,
+      // so only resync the depth counter.
+      if (selfPopsRef.current > 0 && Date.now() < selfPopDeadlineRef.current) {
+        selfPopsRef.current -= 1;
+        navDepthRef.current = depth;
+        return;
+      }
+      selfPopsRef.current = 0;
+
+      navDepthRef.current = depth;
+
+      // The lock screen is a gate - back must not walk around it.
+      if (screenRef.current === 'locked') {
+        try { window.history.pushState({ coopScreen: 'locked', coopDepth: 0 }, ''); } catch { /* ignore */ }
+        return;
+      }
+
+      const prev = historyRef.current;
+      const next: ScreenName[] = prev.length > 1 ? prev.slice(0, -1) : ['home'];
+      // `fromState` is narrowed as a plain identifier, which a compound ternary
+      // condition would not do.
+      const fromState = st?.coopScreen;
+      let target: ScreenName = (fromState && VALID_SCREENS.includes(fromState))
+        ? fromState
+        : next[next.length - 1];
+      // A signed-in wallet must never navigate back into a gate screen
+      // (welcome / login / signup / locked).
+      if (PRE_AUTH_SCREENS.includes(target)) target = 'home';
+      commitHistory(next);
+      applyScreen(target);
+
+      // Re-arm: keep one of our entries on the browser stack so the NEXT back
+      // press also stays inside the app.
+      if (depth === 0) {
+        try { window.history.pushState({ coopScreen: target, coopDepth: 0 }, ''); } catch { /* ignore */ }
+      }
+    };
+
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [authed, commitHistory, applyScreen]);
+
+  // Landing back on the dashboard re-pulls balances, transactions and mining
+  // state, so returning "home" always shows fresh numbers. Deduped by visit so
+  // the account object changing identity cannot loop.
+  const lastRefreshScreenRef = useRef<ScreenName | null>(null);
+  useEffect(() => {
+    if (lastRefreshScreenRef.current === currentScreen) return;
+    lastRefreshScreenRef.current = currentScreen;
+    if (account && currentScreen === 'home') void refreshAccountData(account);
+  }, [account, currentScreen, refreshAccountData]);
+
+  // Every screen starts at the top (back/forward used to keep the old scroll).
+  useEffect(() => {
+    const main = document.querySelector('.app-main-content');
+    if (main) main.scrollTop = 0;
+    window.scrollTo(0, 0);
+  }, [currentScreen]);
 
   // Session countdown (display only — the server clock computes rewards)
   useEffect(() => {
@@ -208,7 +360,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setAccount(acc);
       setIsLocked(false);
       localStorage.setItem('coop_private_key', key.toLowerCase());
-      navigateTo('home');
+      // Start a fresh stack rather than stacking on top of "welcome": back from
+      // the dashboard should not walk back into the login screen.
+      commitHistory(['home']);
+      applyScreen('home');
       addNotification('Welcome Back', 'Logged in successfully with your private key.', 'success');
       await refreshAccountData(acc);
       return true;
@@ -228,7 +383,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setAccount(acc);
     setIsLocked(false);
     localStorage.setItem('coop_private_key', key.toLowerCase());
-    navigateTo('home');
+    commitHistory(['home']);
+    applyScreen('home');
     addNotification('Account Created', 'Your COOP Wallet account is ready. Start mining to earn Coopoint!', 'success');
     // Refresh in the background — has its own try/catch. Do NOT block the
     // creation RPC response on it; otherwise a slow/hanging mining-status
@@ -242,6 +398,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setTasks([]);
     setTransactions([]);
     localStorage.removeItem('coop_private_key');
+    // Clear the saved screen too, otherwise the next login could restore a
+    // sub-screen the new user never visited.
+    localStorage.removeItem('coop_current_screen');
+    historyRef.current = ['welcome'];
+    screenRef.current = 'welcome';
+    navDepthRef.current = 0;
     setCurrentScreen('welcome');
     setScreenHistory(['welcome']);
   };
@@ -254,7 +416,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const unlockWallet = (credential?: string): boolean => {
     if (!credential || credential === account?.pinCode || credential === 'biometric') {
       setIsLocked(false);
-      navigateTo('home');
+      // Reset the stack to the dashboard: otherwise "back" would walk into the
+      // lock screen we just unlocked (the screen is stateful, so it would show
+      // even though the wallet is no longer locked).
+      commitHistory(['home']);
+      applyScreen('home');
       return true;
     }
     return false;
