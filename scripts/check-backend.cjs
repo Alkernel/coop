@@ -104,4 +104,28 @@ const CHECKS = [
     console.log('\nThen re-run this script. (v9 also unblocks MINING CLAIM: it rebuilds the');
     console.log('transactions CHECK constraints so currency \'Coopoints\' is accepted.)');
   }
+
+  // --- Version probe: is the UPDATED typing build deployed? ----------------
+  // rpc_support_typing with p_wallet_id = null and no key must answer
+  // 'Unauthorized' (v9). The older v8 build answers 'Wallet id required',
+  // which is the reason admin typing never reached the user app.
+  // Either way it raises BEFORE writing, so nothing is touched.
+  let typingMsg = '';
+  try {
+    const r = await fetch(URL_ + '/rest/v1/rpc/rpc_support_typing', {
+      method: 'POST', headers: H,
+      body: JSON.stringify({ p_ticket_id: NIL, p_wallet_id: null, p_admin_key: null })
+    });
+    typingMsg = JSON.parse((await r.text()) || '{}').message || '';
+  } catch (e) { typingMsg = 'network error: ' + e.message; }
+
+  console.log('');
+  if (/Unauthorized/i.test(typingMsg)) {
+    console.log('Typing build: OK (v9). Admin typing works with or without an admin key.');
+  } else if (/Wallet id required/i.test(typingMsg)) {
+    console.log('Typing build: OUTDATED (v8).');
+    console.log('  -> "typing" lingers for 90s after someone stops, and an admin who');
+    console.log('     signs in with an account (no admin key) cannot broadcast typing.');
+    console.log('  -> Re-run supabase/migration-v9-support-ratings.sql in Supabase.');
+  }
 })();

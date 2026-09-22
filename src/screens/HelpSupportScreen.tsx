@@ -38,6 +38,24 @@ const faqs = [
 const fmtTime = (ts: number) =>
   new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+// The support agent reads these, so they are remembered between visits. A blank
+// name would leave the admin dashboard showing a faceless "User".
+const NAME_KEY = 'coop_support_name';
+const EMAIL_KEY = 'coop_support_email';
+
+const lastName = (): string => {
+  try { return localStorage.getItem(NAME_KEY) || ''; } catch { return ''; }
+};
+const lastEmail = (): string => {
+  try { return localStorage.getItem(EMAIL_KEY) || ''; } catch { return ''; }
+};
+const rememberContact = (n: string, e: string) => {
+  try {
+    if (n) localStorage.setItem(NAME_KEY, n);
+    if (e) localStorage.setItem(EMAIL_KEY, e);
+  } catch { /* storage unavailable - not fatal */ }
+};
+
 const fmtDateTime = (ts: number) =>
   new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -146,16 +164,27 @@ export const HelpSupportScreen: React.FC = () => {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, adminTyping]);
 
+  // Remember who the user is: the agent reads this, so a returning user should
+  // never have to retype it (and the admin should never see a blank "User").
+  useEffect(() => {
+    setName(prev => prev || lastName());
+    setEmail(prev => prev || lastEmail());
+  }, []);
+
   const openConversation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!account) { setError('You need to be logged in to chat with support.'); return; }
     const body = message.trim();
     if (!body) { setError('Please write a message first.'); return; }
+    // Never send a blank name - fall back to a wallet-based label so the agent
+    // can still tell who is talking to them.
+    const who = name.trim() || `User ${account.address.slice(-6)}`;
     setSending(true);
     setError('');
     try {
       const subject = formType === 'report' ? 'Report a Problem' : 'Support request';
-      const id = await dbService.openSupportTicket(account.id, name.trim(), email.trim(), subject, body);
+      const id = await dbService.openSupportTicket(account.id, who, email.trim(), subject, body);
+      rememberContact(who, email.trim());
       setTicketId(id);
       setTicketStatus('open');
       setClosedBy(null);
@@ -454,7 +483,7 @@ export const HelpSupportScreen: React.FC = () => {
             <div className="field" style={{ marginBottom: 10 }}>
               <label>Name</label>
               <input className="input-bubble" style={{ width: '100%' }} value={name}
-                onChange={e => setName(e.target.value)} placeholder="Your name" maxLength={60} />
+                onChange={e => setName(e.target.value)} placeholder="Your name — visible to the support agent" maxLength={60} />
             </div>
             <div className="field" style={{ marginBottom: 10 }}>
               <label>Email</label>
