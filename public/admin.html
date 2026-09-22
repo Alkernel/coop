@@ -1132,7 +1132,7 @@ function userTypingBubbleHtml(d) {
   return '<div id="support-user-typing-bubble" class="chat-bubble-in" style="display:flex;justify-content:flex-start">' +
     '<div style="max-width:75%;padding:10px 14px;border-radius:14px;background:var(--bg-surface);color:var(--text-tertiary);display:flex;align-items:center;gap:5px">' +
     '<span class="chat-typing-dot"></span><span class="chat-typing-dot"></span><span class="chat-typing-dot"></span>' +
-    '<span style="font-size:11px;margin-left:4px">' + esc(userLabel(t)) + ' is typing</span>' +
+    '<span data-typing-label style="font-size:11px;margin-left:4px">' + esc(userLabel(t)) + ' is typing</span>' +
     '</div></div>';
 }
 
@@ -1147,7 +1147,16 @@ function syncUserTypingBubble(d) {
   if (!el) {
     thr.insertAdjacentHTML('beforeend', userTypingBubbleHtml(d));
     thr.scrollTop = thr.scrollHeight;
+    return;
   }
+  // Already on screen: only refresh the label (the name can arrive later).
+  var lbl = el.querySelector('[data-typing-label]');
+  if (lbl) {
+    var want2 = esc(userLabel(d.ticket || {})) + ' is typing';
+    if (lbl.textContent !== want2) lbl.textContent = want2;
+  }
+  var nearBottom = thr.scrollHeight - thr.scrollTop - thr.clientHeight < 80;
+  if (nearBottom) thr.scrollTop = thr.scrollHeight;
 }
 
 function supportMessagesHtml(d) {
@@ -1343,6 +1352,10 @@ function sendAdminReply() {
   var btn = $( 'support-send-btn'); if (btn) btn.disabled = true;
   rpc( 'rpc_support_admin_reply', { p_admin_key: null, p_ticket_id: SUPPORT_TICKET, p_body: body, p_admin_name: SUPPORT_ADMIN_NAME || 'Support' }).then(function () {
     box.value = '';
+    // The reply is out: drop the "you are typing" dots immediately.
+    _adminTypingActive = false;
+    if (_adminTypingHideTimer) { clearTimeout(_adminTypingHideTimer); _adminTypingHideTimer = null; }
+    var ind = $( 'support-admin-typing-indicator'); if (ind) ind.style.display = 'none';
     showMsg( 'support-msg', 'Reply sent. The user sees it in their app instantly.', false);
     return adminPollSupport();
   }).catch(function (err) {
