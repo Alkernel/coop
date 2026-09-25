@@ -9,7 +9,7 @@ import {
   AppSettings,
   SwapDirection
 } from '../types';
-import { dbService, isSupabaseConfigured } from '../services/supabase';
+import { dbService, isSupabaseConfigured, CoopMarket } from '../services/supabase';
 import { generateSecurePrivateKey, isValidPrivateKey } from '../services/crypto';
 
 interface WalletContextType {
@@ -28,6 +28,9 @@ interface WalletContextType {
   isMiningActive: boolean;
   dailyLimitReached: boolean;
   settings: AppSettings | null;
+  /** Live COOP market snapshot (admin price + real supply / holders). */
+  market: CoopMarket | null;
+  refreshMarket: () => void;
   
   // Selected asset for AssetScreen
   selectedAsset: 'COOP' | 'COOPTOKEN' | null;
@@ -89,6 +92,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [miningStatus, setMiningStatus] = useState<MiningStatus | null>(null);
   const [miningRemainingMs, setMiningRemainingMs] = useState<number>(0);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [market, setMarket] = useState<CoopMarket | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<'COOP' | 'COOPTOKEN' | null>(null);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
@@ -230,10 +234,19 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     })();
   }, []);
 
-  // Load public settings once
+  // Stable market refresh (used by the wallet headline value + the explorer).
+  const refreshMarket = useCallback(() => {
+    if (!isSupabaseConfigured) return;
+    void dbService.coopMarket()
+      .then(setMarket)
+      .catch(e => console.warn('Market refresh failed:', e));
+  }, []);
+
+  // Load public settings + the COOP market snapshot once
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     dbService.getSettings().then(setSettings).catch(e => console.warn('Settings load failed:', e));
+    dbService.coopMarket().then(setMarket).catch(e => console.warn('Market load failed:', e));
   }, []);
 
   // Poll the server for mining progress (survives refresh/reopen).
@@ -320,8 +333,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     if (lastRefreshScreenRef.current === currentScreen) return;
     lastRefreshScreenRef.current = currentScreen;
-    if (account && currentScreen === 'home') void refreshAccountData(account);
-  }, [account, currentScreen, refreshAccountData]);
+    if (account && currentScreen === 'home') {
+      void refreshAccountData(account);
+      refreshMarket();
+    }
+  }, [account, currentScreen, refreshAccountData, refreshMarket]);
 
   // Every screen starts at the top (back/forward used to keep the old scroll).
   useEffect(() => {
@@ -555,6 +571,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         isMiningActive,
         dailyLimitReached,
         settings,
+        market,
+        refreshMarket,
         selectedAsset,
         setSelectedAsset,
         selectedTx,

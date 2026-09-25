@@ -627,7 +627,10 @@ function openTx(i) {
   h += '</div>';
   if (memo) h += '<div class="card"><div class="card-title">Sender comment (memo)</div><div class="hint" style="font-size:14px;font-weight:600;color:var(--text-primary)">' + esc(memo) + '</div></div>';
   if (notes) h += '<div class="card"><div class="card-title">Ledger notes</div><div class="hint">' + esc(notes) + '</div></div>';
-  if (t.tx_hash) h += '<div class="btn-row"><button class="btn btn-primary" onclick="openExplorerTx(' + JSON.stringify(t.tx_hash) + ')">View on Coop Explorer</button></div>';
+  // The explorer indexes on-ledger COOP coin transfers only (Coopoint is an
+  // off-chain points balance), so only send/receive COOP rows get the action.
+  var isCoopTransfer = t.currency === 'COOP' && (t.tx_type === 'send' || t.tx_type === 'receive');
+  if (t.tx_hash && isCoopTransfer) h += '<div class="btn-row"><button class="btn btn-primary" onclick="openExplorerTx(' + JSON.stringify(t.tx_hash) + ')">View on Coop Explorer</button></div>';
   h += '<div class="btn-row"><button class="btn btn-secondary" onclick="openUser(\'' + t.wallet_id + '\')">Open user wallet</button></div>';
   el.innerHTML = h;
 }
@@ -900,7 +903,12 @@ async function deleteTask(id) {
 function renderSettings() {
   var el = $( 'body-settings');
   el.innerHTML = '<div class="tag">Loading</div>';
-  rpc( 'rpc_get_settings').then(function (s) {
+  Promise.all([
+    rpc( 'rpc_get_settings'),
+    rpc( 'rpc_get_coop_market').catch(function () { return null; })
+  ]).then(function (res) {
+    var s = res[0];
+    var mkt = res[1] || {};
     var tiers = JSON.stringify(s.boost_tiers || [], null, 2);
     var h = '<div class="card"><div class="card-title">Mining</div>';
     h += field( 'base-mining-rate', 'Base mining rate (Coopoint/hour, e.g. 100)', s.base_mining_rate);
@@ -916,6 +924,10 @@ function renderSettings() {
     h += '<div class="card"><div class="card-title">COOP reward pool</div>';
     h += field( 'total-pool', 'Total COOP reward pool', s.total_coop_reward_pool);
     h += field( 'remaining-pool', 'Remaining COOP reward pool', s.remaining_coop_reward_pool);
+    h += '</div>';
+    h += '<div class="card"><div class="card-title">COOP market</div>';
+    h += field( 'coop-price-usd', 'COOP reference price in USDT (0 = not published)', mkt.coop_price_usd != null ? mkt.coop_price_usd : 0);
+    h += '<div class="hint">Single source of truth for the wallet balance value and the explorer market panel. While this is 0 the app shows &ldquo;not published&rdquo; instead of a made-up price.</div>';
     h += '</div>';
     h += '<div class="card"><div class="card-title">Boost packages (JSON)</div>';
     h += '<div class="field"><textarea id="boost-tiers" rows="8">' + esc(tiers) + '</textarea></div>';
@@ -955,6 +967,11 @@ async function saveSettings() {
   toast('Saving changes…', false);
   try {
     await rpc( 'rpc_admin_set_settings', { p_admin_key: usingKey ? latestKey : null, p_updates: updates });
+    // The COOP reference price has its own RPC (supabase/migration-v10-explorer.sql).
+    var priceEl = $( 'coop-price-usd');
+    if (priceEl) {
+      await rpc( 'rpc_admin_set_coop_price', { p_admin_key: usingKey ? latestKey : null, p_price_usd: priceEl.value });
+    }
     showMsg( 'settings-msg', '✓ Changes committed — the wallet now reads the new values.', false);
   } catch (err) {
     showMsg( 'settings-msg', '✕ Unable to save changes: ' + (err.message || ''), true);

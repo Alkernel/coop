@@ -47,11 +47,16 @@ export const CoinIcon: React.FC<CoinIconProps> = ({
     );
   }
 
-  // Cooptoken / USDT use their own static icon asset
+  // Cooptoken / USDT use their own static icon asset.
+  // USDT additionally carries a small BNB badge so it reads as BNB Smart Chain
+  // (BEP-20) USDT — the only chain Coop USDT settles on. The ring colour matches
+  // the card surface so the badge looks cleanly punched into the icon.
+  const badgeSize = Math.max(13, Math.round(size * 0.44));
+  const badgeRing = Math.max(1, Math.round(size * 0.05));
   return (
     <div
       className={`coin-icon-wrapper ${className}`}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, position: 'relative' }}
     >
       <img
         src={tokenSrc}
@@ -62,6 +67,40 @@ export const CoinIcon: React.FC<CoinIconProps> = ({
         draggable={false}
         onContextMenu={(e) => e.preventDefault()}
       />
+      {coin === 'USDT' && (
+        <span
+          className="coin-icon-badge"
+          title="BNB Smart Chain · BEP-20"
+          role="img"
+          aria-label="BNB Smart Chain, BEP-20"
+          style={{
+            position: 'absolute',
+            right: -Math.round(size * 0.07),
+            bottom: -Math.round(size * 0.07),
+            width: badgeSize,
+            height: badgeSize,
+            borderRadius: '50%',
+            background: '#F0B90B',
+            border: `${badgeRing}px solid var(--bg-surface, #ffffff)`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxSizing: 'content-box',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.28)'
+          }}
+        >
+          {/* Binance mark: centre diamond plus the four arms */}
+          <svg viewBox="0 0 24 24" width="68%" height="68%" aria-hidden="true" focusable="false">
+            <g fill="#ffffff">
+              <polygon points="12,8.9 15.1,12 12,15.1 8.9,12" />
+              <polygon points="12,2.5 15.1,5.6 12,8.7 8.9,5.6" />
+              <polygon points="12,15.3 15.1,18.4 12,21.5 8.9,18.4" />
+              <polygon points="5.6,8.9 8.7,12 5.6,15.1 2.5,12" />
+              <polygon points="18.4,8.9 21.5,12 18.4,15.1 15.1,12" />
+            </g>
+          </svg>
+        </span>
+      )}
     </div>
   );
 };

@@ -12,7 +12,9 @@ export const HomeScreen: React.FC = () => {
     unreadNotificationsCount, 
     miningStatus,
     isMiningActive,
-    setSelectedAsset
+    setSelectedAsset,
+    settings,
+    market
   } = useWallet();
 
   const [showNotifications, setShowNotifications] = useState(false);
@@ -21,6 +23,28 @@ export const HomeScreen: React.FC = () => {
   // estimated while explicitly labeled, using no hardcoded market price.
   const coopBalance = account?.coopBalance || 0;
   const cooptokenBalance = account?.cooptokenBalance || 0;
+
+  // --- Real cross-values -----------------------------------------------------
+  // COOP is priced in USDT from the admin-published reference price
+  // (admin_settings.coop_price_usd). Until an admin sets it, priceSet is false
+  // and the UI says "not published yet" rather than inventing a market value.
+  const coopPriceUsd = market?.priceSet ? market.coopPriceUsd : 0;
+  const coopUsdValue = coopPriceUsd > 0 ? coopBalance * coopPriceUsd : null;
+
+  // Coopoint is valued in COOP through the REAL swap ratio (points_per_coop) —
+  // exactly the rate the server uses when converting, so the number matches
+  // what the user actually gets in Swap.
+  const pointsPerCoop = (settings?.pointsPerCoop && settings.pointsPerCoop > 0)
+    ? settings.pointsPerCoop
+    : (market?.pointsPerCoop && market.pointsPerCoop > 0 ? market.pointsPerCoop : 0);
+  const cooptokenInCoop = pointsPerCoop > 0 ? cooptokenBalance / pointsPerCoop : null;
+  const cooptokenUsdValue = cooptokenInCoop != null && coopPriceUsd > 0
+    ? cooptokenInCoop * coopPriceUsd
+    : null;
+
+  // Share of circulating supply — real holder data from the ledger.
+  const circulatingSupply = market?.circulatingSupply ?? 0;
+  const holderSharePct = circulatingSupply > 0 ? (coopBalance / circulatingSupply) * 100 : null;
 
   // Real values from the backend mining status
   const boostPct = miningStatus?.boostPct ?? 0;
@@ -92,16 +116,41 @@ export const HomeScreen: React.FC = () => {
       {/* Total Balance Card */}
       <div className="bubble-card bubble-card-elevated" style={{ background: 'var(--bg-surface)' }}>
         <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>COOP Balance</span>
-        <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.5px', margin: '6px 0 10px 0' }}>
+        <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.5px', margin: '6px 0 2px 0' }}>
           {coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COOP
+        </div>
+        {/* Real USDT value. Shown only when an admin has published the COOP
+            reference price — never a hardcoded or invented market value. */}
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 10 }}>
+          {coopUsdValue != null
+            ? `≈ $${coopUsdValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`
+            : 'USDT value not published yet'}
+          {coopPriceUsd > 0 && (
+            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500 }}>
+              {` · 1 COOP = $${coopPriceUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`}
+            </span>
+          )}
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, color: 'var(--text-secondary)', fontWeight: 500 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>
             <span>{coopBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COOP</span>
-            <span className="badge-tag badge-green">
-              ▲ +{boostPct}%
-            </span>
+            {/* Share of circulating COOP supply — real holder data. Until the
+                holder index is available, the mining boost badge is kept. */}
+            {holderSharePct != null ? (
+              <span className="badge-tag badge-green">
+                {holderSharePct < 0.01 ? '<0.01' : holderSharePct.toFixed(2)}% of supply
+              </span>
+            ) : (
+              <span className="badge-tag badge-green">
+                ▲ +{boostPct}%
+              </span>
+            )}
+            {market != null && market.holderCount > 0 && (
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                {market.holderCount.toLocaleString('en-US')} holders
+              </span>
+            )}
           </div>
 
           <div style={{
@@ -113,6 +162,11 @@ export const HomeScreen: React.FC = () => {
             border: '1px solid var(--border-color)'
           }}>
             {cooptokenBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} Coopoint (Mining)
+            {cooptokenInCoop != null && (
+              <span style={{ marginLeft: 6, color: 'var(--text-secondary)' }}>
+                ≈ {cooptokenInCoop.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} COOP
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -247,6 +301,23 @@ export const HomeScreen: React.FC = () => {
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                 {asset.balance == null ? 'Not tracked on-chain yet' : asset.symbol}
               </div>
+              {/* Real cross-value: Coopcoin → USDT (admin-published price),
+                  Coopoint → COOP (the real swap ratio the server converts at). */}
+              {asset.coin === 'COOP' && coopUsdValue != null && (
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  ≈ ${coopUsdValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              )}
+              {asset.coin === 'COOPTOKEN' && cooptokenInCoop != null && (
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  ≈ {cooptokenInCoop.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} COOP
+                  {cooptokenUsdValue != null && (
+                    <span style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>
+                      {` · $${cooptokenUsdValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}

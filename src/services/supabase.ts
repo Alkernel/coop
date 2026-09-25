@@ -79,6 +79,66 @@ export type ExplorerLookup =
   | { kind: 'address'; address: string }
   | { kind: 'none' };
 
+// ---------------------------------------------------------------------------
+// Coop Explorer scope — the explorer indexes ON-LEDGER COOP COIN TRANSFERS.
+// Coopoint is an off-chain points balance stored in the database (no chain
+// transaction, no own tx hash), so it is deliberately never explorer-scoped.
+// ---------------------------------------------------------------------------
+export const isOnLedgerCoopTransfer = (tx: { txType: string; currency: string }): boolean =>
+  tx.currency === 'COOP' && (tx.txType === 'send' || tx.txType === 'receive');
+
+export interface ExplorerHolder {
+  rank: number;
+  address: string;
+  balance: number;
+  /** Share of circulating COOP supply, in percent (0-100). */
+  sharePct: number;
+  /** COOP transfer rows written for this wallet. */
+  txCount: number;
+  lastActiveAt: number | null;
+}
+
+export interface ExplorerHolders {
+  totalSupply: number;
+  holderCount: number;
+  holders: ExplorerHolder[];
+  /** true only when the holder index RPC is deployed. */
+  indexed: boolean;
+}
+
+export interface ExplorerActivityDay {
+  date: string;
+  sent: number;
+  received: number;
+  txCount: number;
+  walletCount: number;
+}
+
+export interface ExplorerActivity {
+  days: ExplorerActivityDay[];
+  totalSent: number;
+  totalReceived: number;
+  totalTx: number;
+  uniqueWallets: number;
+  /** true when the numbers come from the server index, false for the ledger fallback. */
+  indexed: boolean;
+}
+
+export interface CoopMarket {
+  /** Admin-set COOP reference price in USDT. 0 means "not set yet". */
+  coopPriceUsd: number;
+  priceSet: boolean;
+  /** Coopoint per 1 COOP — the real swap ratio from admin_settings. */
+  pointsPerCoop: number;
+  /** Sum of every wallet's COOP balance (real circulating supply). */
+  circulatingSupply: number;
+  holderCount: number;
+  walletCount: number;
+  poolTotal: number;
+  poolRemaining: number;
+  indexed: boolean;
+}
+
 export const sanitizeExplorerQuery = (q: string): string =>
   (q || '').trim().replace(/[^a-zA-Z0-9x]/g, '');
 
@@ -423,16 +483,23 @@ class DatabaseService {
     });
     if (!error && data) {
       const rows = Array.isArray(data) ? data : (data.rows || []);
-      return rows.map((r: any) => this.explorerTxFromDb(r));
+      // Defence in depth: even an older index must never leak Coopoint / swap /
+      // mining rows into a COOP-coin explorer.
+      return rows
+        .map((r: any) => this.explorerTxFromDb(r))
+        .filter(isOnLedgerCoopTransfer);
     }
     if (error && !this.isMissingFunction(error)) throw new Error(error.message);
 
+    // Fallback: read the ledger directly, scoped to COOP coin transfers only.
     let q = sb
       .from('transactions')
       .select(EXPLORER_TX_COLUMNS)
+      .eq('currency', 'COOP')
+      .in('tx_type', ['send', 'receive'])
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
-    if (type !== 'all') q = q.eq('tx_type', type);
+    if (type === 'send' || type === 'receive') q = q.eq('tx_type', type);
     q = this.applyStatusFilter(q, status);
     const { data: rows, error: readErr } = await q;
     if (readErr) throw new Error(readErr.message);
@@ -456,13 +523,15 @@ class DatabaseService {
     }
     if (error && !this.isMissingFunction(error)) throw new Error(error.message);
 
-    // Fallback: exact counts straight from the ledger (read-only).
-    const count = async (apply: (q: any) => any): Promise<number> => {
-      const res = await apply(sb.from('transactions').select('id', { count: 'exact', head: true }));
+    // Fallback: exact counts straight from the ledger (read-only). Scoped to
+    // on-ledger COOP coin transfers, because that is all the explorer indexes.
+    const base = (q: any) => q.eq('currency', 'COOP').in('tx_type', ['send', 'receive']);
+    const count = async (apply: (q: any) => any = (q: any) => q): Promise<number> => {
+      const res = await apply(base(sb.from('transactions').select('id', { count: 'exact', head: true })));
       if (res.error) throw new Error(res.error.message);
       return Number(res.count ?? 0);
     };
-    const total = await count(q => q);
+    const total = await count();
     const completed = await count(q => q.or('status.eq.Completed,status.eq.Complete'));
     const pending = await count(q => q.eq('status', 'Pending'));
     const failed = await count(q => q.eq('status', 'Failed'));
@@ -481,14 +550,20 @@ class DatabaseService {
     const { data, error } = await sb.rpc('rpc_explorer_tx', { p_hash: clean });
     if (!error && data) {
       const rows = Array.isArray(data) ? data : (data.rows || []);
-      if (rows.length) return rows.map((r: any) => this.explorerTxFromDb(r));
+      if (rows.length) {
+        return rows.map((r: any) => this.explorerTxFromDb(r)).filter(isOnLedgerCoopTransfer);
+      }
     }
     if (error && !this.isMissingFunction(error)) throw new Error(error.message);
 
+    // Fallback: only on-ledger COOP coin transfers have an explorer page, so a
+    // Coopoint / swap / mining hash resolves to "no record" here.
     const exact = await sb
       .from('transactions')
       .select(EXPLORER_TX_COLUMNS)
       .eq('tx_hash', clean)
+      .eq('currency', 'COOP')
+      .in('tx_type', ['send', 'receive'])
       .order('created_at', { ascending: true })
       .limit(20);
     if (exact.error) throw new Error(exact.error.message);
@@ -498,6 +573,8 @@ class DatabaseService {
       .from('transactions')
       .select(EXPLORER_TX_COLUMNS)
       .ilike('tx_hash', clean)
+      .eq('currency', 'COOP')
+      .in('tx_type', ['send', 'receive'])
       .order('created_at', { ascending: true })
       .limit(20);
     if (loose.error) throw new Error(loose.error.message);
@@ -536,6 +613,8 @@ class DatabaseService {
     const { data: legs, error: legErr } = await sb
       .from('transactions')
       .select(EXPLORER_TX_COLUMNS)
+      .eq('currency', 'COOP')
+      .in('tx_type', ['send', 'receive'])
       .ilike('counterparty', `%${clean}%`)
       .order('created_at', { ascending: false })
       .limit(150);
@@ -548,6 +627,8 @@ class DatabaseService {
         .from('transactions')
         .select(EXPLORER_TX_COLUMNS)
         .in('tx_hash', hashes)
+        .eq('currency', 'COOP')
+        .in('tx_type', ['send', 'receive'])
         .limit(500);
       if (sibErr) throw new Error(sibErr.message);
       siblings = sib || [];
@@ -580,6 +661,8 @@ class DatabaseService {
     const { data, error } = await sb
       .from('transactions')
       .select('tx_hash,counterparty')
+      .eq('currency', 'COOP')
+      .in('tx_type', ['send', 'receive'])
       .or(`tx_hash.ilike.%${clean}%,counterparty.ilike.%${clean}%`)
       .order('created_at', { ascending: false })
       .limit(5);
@@ -590,6 +673,131 @@ class DatabaseService {
       return { kind: 'address', address: sanitizeExplorerQuery(row.counterparty) };
     }
     return { kind: 'tx', hash: String(row.tx_hash) };
+  }
+
+  // --- 6c. COOP MARKET + HOLDERS (real rows only) ---------------------------
+  // The holder index resolves public.wallets, which is not readable with the
+  // public key. There is deliberately NO fallback that could invent balances:
+  // when the index migration is missing the UI is told `indexed: false`.
+  async explorerHolders(limit = 25): Promise<ExplorerHolders> {
+    const sb = this.assertSupabase();
+    const { data, error } = await sb.rpc('rpc_explorer_holders', { p_limit: limit });
+    if (!error && data) {
+      const holders = Array.isArray(data.holders) ? data.holders : [];
+      return {
+        totalSupply: Number(data.total_supply ?? 0),
+        holderCount: Number(data.holder_count ?? 0),
+        indexed: true,
+        holders: holders.map((h: any) => ({
+          rank: Number(h.rank ?? 0),
+          address: String(h.address ?? ''),
+          balance: Number(h.balance ?? 0),
+          sharePct: Number(h.share_pct ?? 0),
+          txCount: Number(h.tx_count ?? 0),
+          lastActiveAt: h.last_active_at ? new Date(h.last_active_at).getTime() : null
+        }))
+      };
+    }
+    if (error && !this.isMissingFunction(error)) throw new Error(error.message);
+    return { totalSupply: 0, holderCount: 0, holders: [], indexed: false };
+  }
+
+  // Daily COOP transfer activity. The ledger table itself is readable, so the
+  // fallback still reports real volume — just without the server-side index.
+  async explorerActivity(days = 14): Promise<ExplorerActivity> {
+    const sb = this.assertSupabase();
+    const { data, error } = await sb.rpc('rpc_explorer_activity', { p_days: days });
+    if (!error && data) {
+      const list = Array.isArray(data.days) ? data.days : [];
+      return {
+        totalSent: Number(data.total_sent ?? 0),
+        totalReceived: Number(data.total_received ?? 0),
+        totalTx: Number(data.total_tx ?? 0),
+        uniqueWallets: Number(data.unique_wallets ?? 0),
+        indexed: true,
+        days: list.map((d: any) => ({
+          date: String(d.date ?? ''),
+          sent: Number(d.sent ?? 0),
+          received: Number(d.received ?? 0),
+          txCount: Number(d.tx_count ?? 0),
+          walletCount: Number(d.wallet_count ?? 0)
+        }))
+      };
+    }
+    if (error && !this.isMissingFunction(error)) throw new Error(error.message);
+
+    const since = new Date(Date.now() - Math.max(1, days) * 86400000).toISOString();
+    const { data: rows, error: readErr } = await sb
+      .from('transactions')
+      .select('wallet_id,tx_type,amount,created_at')
+      .eq('currency', 'COOP')
+      .in('tx_type', ['send', 'receive'])
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(2000);
+    if (readErr) throw new Error(readErr.message);
+
+    const byDay = new Map<string, ExplorerActivityDay>();
+    const perDayWallets = new Map<string, Set<string>>();
+    const wallets = new Set<string>();
+    let totalSent = 0;
+    let totalReceived = 0;
+
+    (rows || []).forEach((r: any) => {
+      const day = String(r.created_at || '').slice(0, 10);
+      const entry = byDay.get(day)
+        || { date: day, sent: 0, received: 0, txCount: 0, walletCount: 0 };
+      const amount = Number(r.amount ?? 0);
+      if (r.tx_type === 'send') { entry.sent += amount; totalSent += amount; }
+      else { entry.received += amount; totalReceived += amount; }
+      entry.txCount += 1;
+      if (r.wallet_id) {
+        const id = String(r.wallet_id);
+        wallets.add(id);
+        const daySet = perDayWallets.get(day) || new Set<string>();
+        daySet.add(id);
+        perDayWallets.set(day, daySet);
+      }
+      byDay.set(day, entry);
+    });
+    byDay.forEach((entry, day) => { entry.walletCount = perDayWallets.get(day)?.size ?? 0; });
+
+    return {
+      days: Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date)),
+      totalSent,
+      totalReceived,
+      totalTx: (rows || []).length,
+      uniqueWallets: wallets.size,
+      indexed: false
+    };
+  }
+
+  // COOP market snapshot: admin-set reference price in USDT + real supply and
+  // holder counts. A price of 0 means "not published yet" — the wallet shows
+  // that honestly instead of inventing a market value.
+  async coopMarket(): Promise<CoopMarket> {
+    const sb = this.assertSupabase();
+    const { data, error } = await sb.rpc('rpc_get_coop_market');
+    if (!error && data) {
+      const price = Number(data.coop_price_usd ?? 0);
+      return {
+        coopPriceUsd: price,
+        priceSet: price > 0,
+        pointsPerCoop: Number(data.points_per_coop ?? 0),
+        circulatingSupply: Number(data.circulating_supply ?? 0),
+        holderCount: Number(data.holder_count ?? 0),
+        walletCount: Number(data.wallet_count ?? 0),
+        poolTotal: Number(data.pool_total ?? 0),
+        poolRemaining: Number(data.pool_remaining ?? 0),
+        indexed: true
+      };
+    }
+    if (error && !this.isMissingFunction(error)) throw new Error(error.message);
+    return {
+      coopPriceUsd: 0, priceSet: false, pointsPerCoop: 0,
+      circulatingSupply: 0, holderCount: 0, walletCount: 0,
+      poolTotal: 0, poolRemaining: 0, indexed: false
+    };
   }
 
   // --- 7. TASKS (server catalog + server-side claim) ---

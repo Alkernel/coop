@@ -31,6 +31,11 @@ export const TxDetailScreen: React.FC = () => {
   const isAdmin = tx.txType === 'admin';
   const statusLabel = tx.status === 'Complete' ? 'Completed' : tx.status;
   const asset = assetFromCurrency(tx.currency);
+  // Only on-ledger COOP coin transfers exist in the explorer. Coopoint is an
+  // off-chain points balance (database only), and USDT is not on-chain yet, so
+  // neither gets a "View on Coop Explorer" action.
+  const hasExplorerPage =
+    tx.currency === 'COOP' && (tx.txType === 'send' || tx.txType === 'receive');
 
   const title =
     isSwap ? (tx.direction === 'coop_to_points' ? 'Swap COOP → Coopoint' : 'Swap Coopoint → COOP')
@@ -193,15 +198,17 @@ export const TxDetailScreen: React.FC = () => {
             {copied === 'tx' ? <Check size={13} /> : <Copy size={13} />}
           </button>
         </div>
-        <a
-          href={explorerTxPath(tx.txHash)}
-          target="_blank"
-          rel="noreferrer"
-          className="pill-btn pill-btn-primary"
-          style={{ marginTop: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none' }}
-        >
-          <ExternalLink size={15} /> View on Coop Explorer
-        </a>
+        {hasExplorerPage && (
+          <a
+            href={explorerTxPath(tx.txHash)}
+            target="_blank"
+            rel="noreferrer"
+            className="pill-btn pill-btn-primary"
+            style={{ marginTop: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none' }}
+          >
+            <ExternalLink size={15} /> View on Coop Explorer
+          </a>
+        )}
       </div>
 
       <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', marginTop: 16, padding: '0 12px' }}>

@@ -79,6 +79,11 @@ export const HistoryScreen: React.FC = () => {
             // Legacy rows use 'Complete'; new rows use 'Completed'. Both mean done.
             const statusLabel = tx.status === 'Complete' ? 'Completed' : tx.status;
             const asset = assetFromCurrency(tx.currency);
+            // Only on-ledger COOP coin transfers have an explorer page. Coopoint is
+            // an off-chain points balance stored in the database (not a chain
+            // transaction), so it never links to the explorer.
+            const hasExplorerPage =
+              tx.currency === 'COOP' && (tx.txType === 'send' || tx.txType === 'receive');
             return (
               <div
                 key={tx.id}
@@ -153,7 +158,7 @@ export const HistoryScreen: React.FC = () => {
                   }}>
                     {statusLabel}
                   </div>
-                  {statusLabel === 'Completed' && (
+                  {hasExplorerPage && statusLabel === 'Completed' && (
                     <a
                       href={explorerTxPath(tx.txHash)}
                       onClick={(event) => event.stopPropagation()}
