@@ -1,27 +1,46 @@
 import React, { useRef, useState } from 'react';
-import { ChevronLeft, QrCode, AlertCircle, Check } from 'lucide-react';
+import { ChevronLeft, QrCode, AlertCircle, Check, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
+import { CoinIcon } from '../components/CoinIcon';
+import { COOP_ASSET } from '../utils/assets';
+import { explorerTxPath } from '../explorer/route';
 import confetti from 'canvas-confetti';
 
-type SendPhase = 'idle' | 'preparing' | 'processing' | 'confirming';
+// Send is a small state machine: form -> confirm -> processing -> done.
+// Nothing is ever reported as sent unless the Coop ledger confirmed it.
+type SendStep = 'form' | 'confirm' | 'processing' | 'done';
+type ProcessStage = 'preparing' | 'processing' | 'confirming' | 'completed';
+
+interface SendReceipt {
+  amount: number;
+  recipient: string;
+  fee: number;
+  status: string;
+  txHash: string;
+  timestamp: number;
+  memo?: string;
+}
+
+const STAGES: { id: ProcessStage; label: string; hint: string }[] = [
+  { id: 'preparing', label: 'Processing', hint: 'Validating recipient and available balance' },
+  { id: 'processing', label: 'Processing', hint: 'Submitting the transfer to the Coop ledger' },
+  { id: 'confirming', label: 'Confirming', hint: 'Waiting for the ledger to confirm the transfer' },
+  { id: 'completed', label: 'Completed', hint: 'Transfer recorded on the Coop ledger' }
+];
+
+const stageIndex = (stage: ProcessStage): number => STAGES.findIndex(s => s.id === stage);
 
 export const SendScreen: React.FC = () => {
-  const { goBack, account, executeSend } = useWallet();
+  const { goBack, account, executeSend, transactions, openTransaction, navigateTo } = useWallet();
   const [recipient, setRecipient] = useState('');
   const [memo, setMemo] = useState('');
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
-  const [showReview, setShowReview] = useState(false);
+  const [step, setStep] = useState<SendStep>('form');
+  const [stage, setStage] = useState<ProcessStage>('preparing');
   const [loading, setLoading] = useState(false);
-  const [phase, setPhase] = useState<SendPhase>('idle');
-  // Real result only (never fake success): set after Supabase confirms.
-  const [receipt, setReceipt] = useState<{
-    amount: number;
-    recipient: string;
-    txHash: string;
-    status: string;
-    timestamp: number;
-  } | null>(null);
+  const [receipt, setReceipt] = useState<SendReceipt | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
   const submittingRef = useRef(false);
 
   const numAmount = parseFloat(amount) || 0;
@@ -29,11 +48,19 @@ export const SendScreen: React.FC = () => {
   const total = numAmount > 0 ? numAmount : 0;
   const availableCoop = account?.coopBalance || 0;
 
-  const phaseLabel: Record<SendPhase, string> = {
-    idle: '',
-    preparing: 'Preparing…',
-    processing: 'Processing…',
-    confirming: 'Confirming…'
+  // The real ledger row for the transfer we just made ("View Transaction").
+  const ledgerRow = receipt
+    ? transactions.find(t => t.txType === 'send' && t.txHash === receipt.txHash) || null
+    : null;
+
+  const copy = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1600);
+    } catch {
+      /* clipboard unavailable */
+    }
   };
 
   const handleReview = () => {
@@ -59,7 +86,7 @@ export const SendScreen: React.FC = () => {
       setError('Insufficient COOP balance.');
       return;
     }
-    setShowReview(true);
+    setStep('confirm');
   };
 
   const confirmTransfer = async () => {
@@ -68,22 +95,31 @@ export const SendScreen: React.FC = () => {
     submittingRef.current = true;
     setLoading(true);
     setError('');
-    setPhase('preparing');
+    setStep('processing');
+    setStage('preparing');
+
     const dest = recipient.trim();
     const sendAmount = numAmount;
+    const sentMemo = memo.trim();
+
     try {
-      setPhase('processing');
-      const res = await executeSend(dest, sendAmount, memo);
-      setPhase('confirming');
-      setShowReview(false);
-      setPhase('idle');
+      setStage('processing');
+      const res = await executeSend(dest, sendAmount, sentMemo || undefined);
+      setStage('confirming');
+      await new Promise(r => setTimeout(r, 550));
+      setStage('completed');
+      await new Promise(r => setTimeout(r, 500));
+
       setReceipt({
         amount: res.amount,
         recipient: res.recipientAddress,
-        txHash: res.txHash,
+        fee: res.fee,
         status: res.status,
-        timestamp: Date.now()
+        txHash: res.txHash,
+        timestamp: Date.now(),
+        memo: sentMemo || undefined
       });
+      setStep('done');
       confetti({
         particleCount: 60,
         spread: 60,
@@ -91,27 +127,303 @@ export const SendScreen: React.FC = () => {
       });
       setRecipient('');
       setAmount('');
+      setMemo('');
     } catch (err: any) {
       setError(err.message || 'Transfer failed');
-      setShowReview(false);
-      setPhase('idle');
+      setStep('form');
     } finally {
       setLoading(false);
       submittingRef.current = false;
     }
   };
 
+  const resetForm = () => {
+    setStep('form');
+    setReceipt(null);
+    setError('');
+  };
+
+  const header = (title: string, onBack: () => void) => (
+    <div className="screen-header">
+      <button className="header-icon-btn" onClick={onBack} aria-label="Back" id="send-back-btn">
+        <ChevronLeft size={22} />
+      </button>
+      <span className="screen-header-title">{title}</span>
+      <div style={{ width: 40 }} />
+    </div>
+  );
+
+  const kvRow = (
+    label: string,
+    value: React.ReactNode,
+    opts?: { mono?: boolean; strong?: boolean; border?: boolean }
+  ) => (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 12,
+      padding: '11px 0',
+      borderBottom: opts?.border === false ? 'none' : '1px solid var(--border-color)'
+    }}>
+      <span style={{ fontSize: 12.5, color: 'var(--text-secondary)', flexShrink: 0 }}>{label}</span>
+      <span style={{
+        fontSize: opts?.strong ? 14.5 : 13,
+        fontWeight: opts?.strong ? 800 : 600,
+        textAlign: 'right',
+        wordBreak: 'break-all',
+        fontFamily: opts?.mono ? 'var(--font-mono)' : undefined
+      }}>
+        {value}
+      </span>
+    </div>
+  );
+
+  // ---------------------------------------------------------------- processing
+  if (step === 'processing') {
+    const active = stageIndex(stage);
+    return (
+      <div className="screen-content" style={{ justifyContent: 'center' }}>
+        {header('Sending', () => undefined)}
+        <div className="coop-fade-up" style={{ textAlign: 'center', padding: '10px 0 26px 0' }}>
+          <div style={{
+            width: 96,
+            height: 96,
+            margin: '0 auto 22px auto',
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <div className="coop-ring-pulse" style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '50%',
+              border: '2px solid var(--border-color)'
+            }} />
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '50%',
+              border: '2px solid transparent',
+              borderTopColor: stage === 'completed' ? 'var(--accent-green)' : 'var(--text-primary)',
+              animation: stage === 'completed' ? 'none' : 'coopSpin 1s linear infinite',
+              opacity: stage === 'completed' ? 0 : 1
+            }} />
+            {stage === 'completed' ? (
+              <div className="coop-check-pop" style={{
+                width: 54, height: 54, borderRadius: '50%',
+                background: 'var(--accent-green-bg)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <Check size={26} color="var(--accent-green)" />
+              </div>
+            ) : (
+              <CoinIcon coin={COOP_ASSET.coin} size={44} />
+            )}
+          </div>
+
+          <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.3px' }}>
+            {STAGES[Math.max(active, 0)].label}
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 6 }}>
+            {STAGES[Math.max(active, 0)].hint}
+          </div>
+        </div>
+
+        <div className="bubble-card" style={{ padding: '6px 18px' }}>
+          {STAGES.map((s, i) => {
+            const done = i < Math.max(active, 0) || stage === 'completed';
+            const current = i === active && stage !== 'completed';
+            return (
+              <div key={s.id} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '11px 0',
+                borderBottom: i === STAGES.length - 1 ? 'none' : '1px solid var(--border-color)'
+              }}>
+                <span style={{
+                  width: 22, height: 22, borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '1px solid var(--border-color)',
+                  background: done ? 'var(--accent-green-bg)' : 'var(--bg-glass)'
+                }}>
+                  {done ? <Check size={13} color="var(--accent-green)" /> : <span style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: current ? 'var(--text-primary)' : 'var(--text-tertiary)'
+                  }} />}
+                </span>
+                <span style={{
+                  fontSize: 13,
+                  fontWeight: current || done ? 700 : 500,
+                  color: current || done ? 'var(--text-primary)' : 'var(--text-tertiary)'
+                }}>
+                  {s.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '4px 4px 0 4px', display: 'flex', gap: 8 }}>
+          <ShieldCheck size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>Do not close the app while the ledger confirms your transfer.</span>
+        </div>
+        <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 14 }}>
+          {numAmount.toFixed(2)} COOP to {recipient.length > 22 ? `${recipient.slice(0, 10)}…${recipient.slice(-8)}` : recipient}
+        </div>
+      </div>
+    );
+  }
+
+  // --------------------------------------------------------------------- done
+  if (step === 'done' && receipt) {
+    const explorerHref = explorerTxPath(receipt.txHash);
+    return (
+      <div className="screen-content" style={{ paddingBottom: 18 }}>
+        {header('Transfer', () => navigateTo('home'))}
+
+        <div className="coop-fade-up" style={{ textAlign: 'center', padding: '8px 0 18px 0' }}>
+          <div className="coop-check-pop" style={{
+            width: 74, height: 74, borderRadius: '50%', margin: '0 auto 16px auto',
+            background: 'var(--accent-green-bg)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Check size={34} color="var(--accent-green)" />
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>Transfer complete</div>
+          <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.6px', margin: '6px 0 10px 0' }}>
+            {receipt.amount.toFixed(2)} <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-secondary)' }}>COOP</span>
+          </div>
+          <span className="badge-tag badge-green">
+            {receipt.status === 'Complete' ? 'Completed' : receipt.status}
+          </span>
+        </div>
+
+        <div className="bubble-card" style={{ padding: '6px 18px' }}>
+          {kvRow('To', receipt.recipient, { mono: true })}
+          {kvRow('Asset', (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+              <CoinIcon coin={COOP_ASSET.coin} size={17} /> Coopcoin (COOP)
+            </span>
+          ))}
+          {kvRow('Network fee', receipt.fee === 0 ? 'Free — internal transfer' : `${receipt.fee}`)}
+          {receipt.memo ? kvRow('Comment', receipt.memo) : null}
+          {kvRow('Transaction hash', (
+            <button
+              onClick={() => copy(receipt.txHash, 'hash')}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontFamily: 'var(--font-mono)', fontSize: 11.5,
+                color: copied === 'hash' ? 'var(--accent-green)' : 'var(--text-secondary)',
+                wordBreak: 'break-all', textAlign: 'right'
+              }}
+            >
+              {receipt.txHash}
+              {copied === 'hash' ? <Check size={13} /> : <Copy size={13} />}
+            </button>
+          ), { border: false })}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button
+            className="pill-btn pill-btn-primary"
+            onClick={() => {
+              if (ledgerRow) openTransaction(ledgerRow);
+              else navigateTo('history');
+            }}
+            id="btn-view-transaction"
+          >
+            View Transaction
+          </button>
+
+          <a
+            className="pill-btn pill-btn-secondary"
+            href={explorerHref}
+            style={{ textDecoration: 'none' }}
+            id="btn-view-on-explorer"
+          >
+            <ExternalLink size={15} />
+            View on Coop Explorer
+          </a>
+
+          <button className="pill-btn pill-btn-secondary" onClick={resetForm}>
+            Send another transfer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ------------------------------------------------------------------ confirm
+  if (step === 'confirm') {
+    return (
+      <div className="screen-content" style={{ paddingBottom: 18 }}>
+        {header('Confirm transfer', () => setStep('form'))}
+
+        <div className="bubble-card bubble-card-elevated coop-fade-up" style={{ textAlign: 'center', padding: '22px 18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
+            <CoinIcon coin={COOP_ASSET.coin} size={44} />
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontWeight: 600 }}>You are sending</div>
+          <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.6px', marginTop: 4 }}>
+            {numAmount.toFixed(2)}
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-secondary)', marginLeft: 6 }}>COOP</span>
+          </div>
+        </div>
+
+        <div className="bubble-card" style={{ padding: '6px 18px' }}>
+          {kvRow('Recipient', recipient.trim(), { mono: true })}
+          {kvRow('Asset', 'Coopcoin (COOP)')}
+          {kvRow('Network', 'COOP internal ledger')}
+          {kvRow('Network fee', '0.00 COOP (internal)')}
+          {memo.trim() ? kvRow('Comment', memo.trim()) : null}
+          {kvRow('Total deducted', `${total.toFixed(2)} COOP`, { strong: true, border: false })}
+        </div>
+
+        <div style={{
+          display: 'flex', gap: 10, alignItems: 'flex-start',
+          padding: '12px 14px', borderRadius: 16,
+          background: 'var(--bg-glass)', border: '1px solid var(--border-color)',
+          fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 16
+        }}>
+          <AlertCircle size={15} color="var(--accent-yellow)" style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            COOP transfers are final. Check the recipient address — an internal
+            transfer cannot be reversed. No blockchain fee is charged.
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button
+            className="pill-btn pill-btn-secondary"
+            onClick={() => setStep('form')}
+            style={{ flex: 1 }}
+            disabled={loading}
+          >
+            Back
+          </button>
+          <button
+            className="pill-btn pill-btn-primary"
+            onClick={confirmTransfer}
+            disabled={loading}
+            style={{ flex: 1 }}
+            id="btn-confirm-send"
+          >
+            {loading ? 'Sending…' : 'Confirm & Send'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --------------------------------------------------------------------- form
   return (
     <div className="screen-content" style={{ minHeight: '100%', justifyContent: 'space-between' }}>
       <div>
-        {/* Header */}
-        <div className="screen-header">
-          <button className="header-icon-btn" onClick={goBack} aria-label="Back" id="send-back-btn">
-            <ChevronLeft size={22} />
-          </button>
-          <span className="screen-header-title">Send</span>
-          <div style={{ width: 40 }} />
-        </div>
+        {header('Send', goBack)}
 
         {/* Recipient Address */}
         <div style={{ marginTop: 16, marginBottom: 24 }}>
@@ -201,6 +513,7 @@ export const SendScreen: React.FC = () => {
               fontWeight: 700,
               border: '1px solid var(--border-color)'
             }}>
+              <CoinIcon coin={COOP_ASSET.coin} size={16} />
               <span>COOP</span>
             </div>
           </div>
@@ -282,120 +595,18 @@ export const SendScreen: React.FC = () => {
             <span>{error}</span>
           </div>
         )}
-
-        {/* Real transaction result (only after Supabase confirms) */}
-        {receipt && (
-          <div style={{
-            padding: '10px 14px',
-            borderRadius: 12,
-            background: 'var(--accent-green-bg)',
-            color: 'var(--accent-green)',
-            fontSize: 13,
-            marginBottom: 16,
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 8
-          }}>
-            <Check size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-            <span style={{ wordBreak: 'break-all' }}>
-              {receipt.status}: sent {receipt.amount.toFixed(2)} COOPCoin to {receipt.recipient}.
-              ID {receipt.txHash} · {new Date(receipt.timestamp).toLocaleString()}.
-              No blockchain hash yet — internal transfer.
-            </span>
-          </div>
-        )}
       </div>
 
-      {/* Review Send Button */}
-      <div style={{ paddingTop: 20 }}>
+      <div style={{ paddingTop: 8 }}>
         <button
           className="pill-btn pill-btn-primary"
           onClick={handleReview}
+          disabled={loading}
           id="btn-review-send"
         >
-          Review Send
+          Review transfer
         </button>
       </div>
-
-      {/* Review Slide-up Sheet */}
-      {showReview && (
-        <div className="drawer-backdrop" onClick={() => setShowReview(false)}>
-          <div className="drawer-sheet" onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8, textAlign: 'center' }}>Review Transfer</h3>
-            {loading && phase !== 'idle' && (
-              <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                <div style={{
-                  width: 34, height: 34, margin: '0 auto 10px auto',
-                  border: '3px solid var(--border-color)',
-                  borderTopColor: 'var(--accent-green)',
-                  borderRadius: '50%',
-                  animation: 'coopSpin 0.8s linear infinite'
-                }} />
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-green)' }}>
-                  {phaseLabel[phase]}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 8 }}>
-                  {(['preparing', 'processing', 'confirming'] as SendPhase[]).map(p => (
-                    <div key={p} style={{
-                      width: 6, height: 6, borderRadius: '50%',
-                      background: phase === p ? 'var(--accent-green)'
-                        : ['preparing', 'processing', 'confirming'].indexOf(phase) > ['preparing', 'processing', 'confirming'].indexOf(p)
-                          ? 'var(--accent-green)' : 'var(--border-color)',
-                      opacity: phase === p ? 1 : 0.7
-                    }} />
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Recipient:</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, fontWeight: 600 }}>
-                  {recipient.length > 20 ? `${recipient.slice(0, 10)}...${recipient.slice(-8)}` : recipient}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Amount:</span>
-                <span style={{ fontWeight: 700 }}>{numAmount.toFixed(2)} COOPCoin</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Network Fee:</span>
-                <span style={{ fontWeight: 600 }}>0.00 (internal)</span>
-              </div>
-              {memo.trim() && (
-                <div style={{ fontSize: 14 }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Comment: </span>
-                  <span style={{ fontWeight: 600 }}>{memo.trim()}</span>
-                </div>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, paddingTop: 8, borderTop: '1px solid var(--border-color)' }}>
-                <span>Total Deduct:</span>
-                <span>{total.toFixed(2)} COOPCoin</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button 
-                className="pill-btn pill-btn-secondary" 
-                onClick={() => setShowReview(false)}
-                style={{ flex: 1 }}
-              >
-                Cancel
-              </button>
-              <button 
-                className="pill-btn pill-btn-primary" 
-                onClick={confirmTransfer}
-                disabled={loading}
-                style={{ flex: 1 }}
-                id="btn-confirm-send"
-              >
-                {loading ? (phase !== 'idle' ? phaseLabel[phase] : 'Sending...') : 'Confirm'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

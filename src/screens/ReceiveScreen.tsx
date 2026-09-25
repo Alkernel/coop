@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { ChevronLeft, Copy, Check, Share2, Info } from 'lucide-react';
+import { ChevronLeft, Copy, Check, Share2, Info, ExternalLink } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useWallet } from '../context/WalletContext';
+import { EXPLORER_HOME } from '../explorer/route';
 
 export const ReceiveScreen: React.FC = () => {
   const { goBack, account } = useWallet();
@@ -130,9 +131,17 @@ export const ReceiveScreen: React.FC = () => {
         </div>
       </div>
 
-      <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, paddingBottom: 12 }}>
-        Network: COOP internal ledger (no blockchain hash yet)
-      </div>
+        <a
+          href={EXPLORER_HOME}
+          className="pill-btn pill-btn-secondary"
+          style={{ marginTop: 14, display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}
+        >
+          <ExternalLink size={15} />
+          Open Coop Explorer
+        </a>
+        <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, paddingBottom: 12, paddingTop: 10 }}>
+          Network: COOP internal ledger
+        </div>
     </div>
   );
 };

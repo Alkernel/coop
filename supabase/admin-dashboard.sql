@@ -393,8 +393,30 @@ begin
   select count(*) into v_total from public.transactions t
   where (p_type is null or p_type='all' or t.tx_type=p_type)
     and (p_search is null or p_search='' or t.tx_hash ilike '%'||p_search||'%'
-      or t.counterparty ilike '%'||p_search||'%' or t.wallet_id::text ilike '%'||p_search||'%');
-  return jsonb_build_object('total', v_total, 'rows', coalesce((
+      or t.counterparty ilike '%'||p_search||'%' or t.wallet_id::text ilike '%'||p_search||'%'
+      or exists (select 1 from public.wallets w where w.id=t.wallet_id and w.address ilike '%'||p_search||'%'));
+  return jsonb_build_object('total', v_total,
+    'status_counts', jsonb_build_object(
+      'pending', (select count(*) from public.transactions t
+        where (p_type is null or p_type='all' or t.tx_type=p_type)
+          and (p_search is null or p_search='' or t.tx_hash ilike '%'||p_search||'%'
+            or t.counterparty ilike '%'||p_search||'%' or t.wallet_id::text ilike '%'||p_search||'%'
+            or exists (select 1 from public.wallets w3 where w3.id=t.wallet_id and w3.address ilike '%'||p_search||'%'))
+          and lower(coalesce(t.status,''))='pending'),
+      'completed', (select count(*) from public.transactions t
+        where (p_type is null or p_type='all' or t.tx_type=p_type)
+          and (p_search is null or p_search='' or t.tx_hash ilike '%'||p_search||'%'
+            or t.counterparty ilike '%'||p_search||'%' or t.wallet_id::text ilike '%'||p_search||'%'
+            or exists (select 1 from public.wallets w3 where w3.id=t.wallet_id and w3.address ilike '%'||p_search||'%'))
+          and lower(coalesce(t.status,'')) in ('complete','completed')),
+      'failed', (select count(*) from public.transactions t
+        where (p_type is null or p_type='all' or t.tx_type=p_type)
+          and (p_search is null or p_search='' or t.tx_hash ilike '%'||p_search||'%'
+            or t.counterparty ilike '%'||p_search||'%' or t.wallet_id::text ilike '%'||p_search||'%'
+            or exists (select 1 from public.wallets w3 where w3.id=t.wallet_id and w3.address ilike '%'||p_search||'%'))
+          and lower(coalesce(t.status,''))='failed')
+    ),
+    'rows', coalesce((
     select jsonb_agg(jsonb_build_object(
       'id', t.id, 'wallet_id', t.wallet_id, 'address', w.address,
       'tx_type', t.tx_type, 'amount', t.amount, 'currency', t.currency,
@@ -406,7 +428,8 @@ begin
       select t.* from public.transactions t
       where (p_type is null or p_type='all' or t.tx_type=p_type)
         and (p_search is null or p_search='' or t.tx_hash ilike '%'||p_search||'%'
-          or t.counterparty ilike '%'||p_search||'%' or t.wallet_id::text ilike '%'||p_search||'%')
+          or t.counterparty ilike '%'||p_search||'%' or t.wallet_id::text ilike '%'||p_search||'%'
+          or exists (select 1 from public.wallets w2 where w2.id=t.wallet_id and w2.address ilike '%'||p_search||'%'))
       order by t.created_at desc limit v_lim offset v_off
     ) t left join public.wallets w on w.id=t.wallet_id
   ), '[]'::jsonb));

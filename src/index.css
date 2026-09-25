@@ -523,6 +523,46 @@ body {
   animation: chatBubbleIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* ---------- Transaction processing / success motion (send & receive) ---------- */
+
+@keyframes coopFadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.coop-fade-up {
+  animation: coopFadeUp 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Soft breathing ring behind the spinner (kept subtle on purpose) */
+@keyframes coopRingPulse {
+  0%, 100% { transform: scale(0.97); opacity: 0.5; }
+  50%      { transform: scale(1.03); opacity: 0.95; }
+}
+
+.coop-ring-pulse {
+  animation: coopRingPulse 1.9s ease-in-out infinite;
+}
+
+/* Single pop when a step flips to completed */
+@keyframes coopCheckPop {
+  0%   { transform: scale(0.65); opacity: 0; }
+  60%  { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.coop-check-pop {
+  animation: coopCheckPop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coop-fade-up,
+  .coop-ring-pulse,
+  .coop-check-pop {
+    animation: none;
+  }
+}
+
 /* The three bouncing dots of the "someone is typing" bubble */
 @keyframes chatTypingDot {
   0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }

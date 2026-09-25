@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Zap, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Zap, CheckCircle2, ExternalLink } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
+import { assetFromCurrency } from '../utils/assets';
+import { explorerTxPath } from '../explorer/route';
 
 export const HistoryScreen: React.FC = () => {
   const { goBack, transactions, openTransaction } = useWallet();
@@ -76,6 +78,7 @@ export const HistoryScreen: React.FC = () => {
             const isAdminCredit = tx.txType === 'admin' && tx.amount >= 0;
             // Legacy rows use 'Complete'; new rows use 'Completed'. Both mean done.
             const statusLabel = tx.status === 'Complete' ? 'Completed' : tx.status;
+            const asset = assetFromCurrency(tx.currency);
             return (
               <div
                 key={tx.id}
@@ -140,7 +143,7 @@ export const HistoryScreen: React.FC = () => {
                       fontWeight: 700,
                       color: isIncoming || isAdminCredit ? 'var(--accent-green)' : 'var(--text-primary)'
                     }}>
-                      {isIncoming || isAdminCredit ? '+' : '-'}{tx.amount.toFixed(2)} {tx.currency === 'COOP' ? 'COOP' : (tx.currency === 'Coopoints' || tx.currency === 'Cooptoken') ? 'Coopoint' : tx.currency}
+                      {isIncoming || isAdminCredit ? '+' : '-'}{tx.amount.toFixed(2)} {asset.symbol}
                     </div>
                   )}
                   <div style={{
@@ -150,8 +153,19 @@ export const HistoryScreen: React.FC = () => {
                   }}>
                     {statusLabel}
                   </div>
+                  {statusLabel === 'Completed' && (
+                    <a
+                      href={explorerTxPath(tx.txHash)}
+                      onClick={(event) => event.stopPropagation()}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 5, color: 'var(--accent-blue)', fontSize: 11, textDecoration: 'none' }}
+                    >
+                      View on Coop Explorer <ExternalLink size={11} />
+                    </a>
+                  )}
                 </div>
-              </div>
+               </div>
             );
           })
         )}

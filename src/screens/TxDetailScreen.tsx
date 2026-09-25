@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Zap, CheckCircle2, Copy, Check } from 'lucide-react';
+import { ChevronLeft, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Zap, CheckCircle2, Copy, Check, ExternalLink } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
+import { assetFromCurrency } from '../utils/assets';
+import { explorerTxPath } from '../explorer/route';
 
 export const TxDetailScreen: React.FC = () => {
-  const { goBack, selectedTx } = useWallet();
+  const { goBack, selectedTx, account } = useWallet();
   const [copied, setCopied] = useState<string | null>(null);
 
   if (!selectedTx) {
@@ -28,6 +30,7 @@ export const TxDetailScreen: React.FC = () => {
   const isIncoming = tx.txType === 'receive' || tx.txType === 'mining' || tx.txType === 'task' || tx.txType === 'boost' || (tx.txType === 'admin' && tx.amount >= 0);
   const isAdmin = tx.txType === 'admin';
   const statusLabel = tx.status === 'Complete' ? 'Completed' : tx.status;
+  const asset = assetFromCurrency(tx.currency);
 
   const title =
     isSwap ? (tx.direction === 'coop_to_points' ? 'Swap COOP → Coopoint' : 'Swap Coopoint → COOP')
@@ -104,7 +107,7 @@ export const TxDetailScreen: React.FC = () => {
             color: isIncoming ? 'var(--accent-green)' : 'var(--text-primary)'
           }}>
             {isIncoming ? '+' : '−'}{(tx.amount || tx.pointsAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}{' '}
-            {tx.currency === 'COOP' ? 'COOP' : 'Coopoint'}
+            {asset.symbol}
           </div>
         )}
         <div style={{
@@ -122,7 +125,14 @@ export const TxDetailScreen: React.FC = () => {
         {counterpartyLabel && tx.counterparty && (
           <div style={rowStyle}>
             <span style={kStyle}>{counterpartyLabel}</span>
-            <span style={{ ...vStyle, fontFamily: 'var(--font-mono)', fontSize: 12 }}>{tx.counterparty}</span>
+            <button
+              type="button"
+              onClick={() => copy(tx.counterparty!, 'counterparty')}
+              style={{ ...vStyle, fontFamily: 'var(--font-mono)', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, textAlign: 'right' }}
+            >
+              {tx.counterparty}
+              {copied === 'counterparty' ? <Check size={13} /> : <Copy size={13} />}
+            </button>
           </div>
         )}
         {isSwap && (
@@ -163,8 +173,12 @@ export const TxDetailScreen: React.FC = () => {
             <span style={vStyle}>{tx.fee === 0 ? 'Free (internal)' : tx.fee}</span>
           </div>
         )}
+        <div style={rowStyle}>
+          <span style={kStyle}>Network</span>
+          <span style={vStyle}>{asset.network}</span>
+        </div>
         <div style={{ ...rowStyle, borderBottom: 'none' }}>
-          <span style={kStyle}>Transaction ID</span>
+          <span style={kStyle}>Transaction hash</span>
           <button
             onClick={() => copy(tx.txHash, 'tx')}
             style={{
@@ -179,10 +193,19 @@ export const TxDetailScreen: React.FC = () => {
             {copied === 'tx' ? <Check size={13} /> : <Copy size={13} />}
           </button>
         </div>
+        <a
+          href={explorerTxPath(tx.txHash)}
+          target="_blank"
+          rel="noreferrer"
+          className="pill-btn pill-btn-primary"
+          style={{ marginTop: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none' }}
+        >
+          <ExternalLink size={15} /> View on Coop Explorer
+        </a>
       </div>
 
       <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', marginTop: 16, padding: '0 12px' }}>
-        Internal COOP network transfer — no blockchain hash yet
+        COOP internal ledger reference
       </p>
     </div>
   );

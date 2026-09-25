@@ -25,6 +25,82 @@ export const DEFAULT_BOOST_TIERS: BoostTier[] = [
   { id: 'max', name: 'Max', priceUsd: 5.50, boostPct: 100, durationDays: 7 }
 ];
 
+// ---------------------------------------------------------------------------
+// Explorer types — read-only views over the REAL ledger rows in
+// public.transactions. Nothing here invents data: every field maps 1:1 to a
+// database column, and fields the backend cannot resolve yet stay null.
+// ---------------------------------------------------------------------------
+
+export type ExplorerStatusFilter = 'all' | 'completed' | 'pending' | 'failed';
+
+export interface ExplorerTransaction {
+  id: string;
+  txType: string;
+  amount: number;
+  currency: string;
+  pointsAmount: number;
+  direction?: string;
+  counterparty?: string;
+  fee: number;
+  status: string;
+  txHash: string;
+  notes?: string;
+  memo?: string;
+  timestamp: number;
+  /** Owner wallet address — null until the ledger index RPC is deployed. */
+  walletAddress: string | null;
+}
+
+export interface ExplorerStats {
+  total: number;
+  completed: number;
+  pending: number;
+  failed: number;
+  /** Distinct wallets in the ledger (null when it cannot be resolved). */
+  wallets: number | null;
+  /** true when the numbers come from the ledger index RPC. */
+  indexed: boolean;
+  /** Oldest / newest record timestamps (null when unknown). */
+  firstTimestamp: number | null;
+  lastTimestamp: number | null;
+}
+
+export interface ExplorerAddressActivity {
+  address: string;
+  rows: ExplorerTransaction[];
+  /** true when the backend could resolve the address' own ledger rows too. */
+  indexed: boolean;
+  /** Total matching rows across all pages when the backend reports it. */
+  total: number | null;
+}
+
+export type ExplorerLookup =
+  | { kind: 'tx'; hash: string }
+  | { kind: 'address'; address: string }
+  | { kind: 'none' };
+
+export const sanitizeExplorerQuery = (q: string): string =>
+  (q || '').trim().replace(/[^a-zA-Z0-9x]/g, '');
+
+// Columns the explorer reads from the ledger. Never includes secrets — the
+// ledger table only holds ledger data.
+const EXPLORER_TX_COLUMNS =
+  'id,wallet_id,tx_type,amount,currency,points_amount,direction,counterparty,fee,status,tx_hash,notes,created_at';
+
+export const looksLikeAddress = (q: string): boolean =>
+  /^0x[0-9a-fA-F]{40}$/.test(sanitizeExplorerQuery(q));
+
+export const isCompletedStatus = (status?: string | null): boolean => {
+  const v = (status || '').trim().toLowerCase();
+  return v === 'completed' || v === 'complete';
+};
+
+export const isPendingStatus = (status?: string | null): boolean =>
+  (status || '').trim().toLowerCase() === 'pending';
+
+export const isFailedStatus = (status?: string | null): boolean =>
+  (status || '').trim().toLowerCase() === 'failed';
+
 class DatabaseService {
   private assertSupabase(): SupabaseClient {
     if (!supabase) {
@@ -284,6 +360,236 @@ class DatabaseService {
       .limit(100);
     if (error) throw new Error(error.message);
     return (data || []).map((row: any) => this.txFromDb(row));
+  }
+
+  // --- 6b. EXPLORER (public, read-only) ------------------------------------
+  // The explorer reads the SAME ledger rows the wallet writes (public.
+  // transactions). When the optional ledger-index RPCs are deployed
+  // (supabase/migration-v10-explorer.sql) they are used for richer address /
+  // aggregate lookups; when they are not deployed yet the explorer still works
+  // straight off the read-only ledger, so nothing is ever faked.
+
+  private explorerTxFromDb(row: any): ExplorerTransaction {
+    const notes: string | undefined = row.notes || undefined;
+    let memo: string | undefined;
+    if (notes) {
+      const m = notes.match(/\| Memo: ([\s\S]+)$/);
+      if (m) memo = m[1].trim();
+    }
+    return {
+      id: row.id,
+      txType: row.tx_type,
+      amount: Number(row.amount),
+      currency: String(row.currency ?? ''),
+      pointsAmount: Number(row.points_amount ?? 0),
+      direction: row.direction || undefined,
+      counterparty: row.counterparty || undefined,
+      fee: Number(row.fee ?? 0),
+      status: row.status,
+      txHash: row.tx_hash,
+      notes,
+      memo,
+      timestamp: new Date(row.created_at).getTime(),
+      walletAddress: row.wallet_address || null
+    };
+  }
+
+  // True when the server answered "function not found" — i.e. the optional
+  // migration has not been applied. Any other error is a real failure.
+  private isMissingFunction(error: any): boolean {
+    const code = String(error?.code || '');
+    const msg = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`;
+    return code === 'PGRST202' || /could not find the function|does not exist|schema cache/i.test(msg);
+  }
+
+  private applyStatusFilter(query: any, status: ExplorerStatusFilter) {
+    if (status === 'completed') return query.or('status.eq.Completed,status.eq.Complete');
+    if (status === 'pending') return query.eq('status', 'Pending');
+    if (status === 'failed') return query.eq('status', 'Failed');
+    return query;
+  }
+
+  async explorerRecent(
+    opts: { limit?: number; offset?: number; type?: string; status?: ExplorerStatusFilter } = {}
+  ): Promise<ExplorerTransaction[]> {
+    const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100);
+    const offset = Math.max(opts.offset ?? 0, 0);
+    const type = opts.type && opts.type !== 'all' ? opts.type : 'all';
+    const status: ExplorerStatusFilter = opts.status ?? 'all';
+    const sb = this.assertSupabase();
+
+    const { data, error } = await sb.rpc('rpc_explorer_recent', {
+      p_limit: limit, p_offset: offset, p_type: type, p_status: status
+    });
+    if (!error && data) {
+      const rows = Array.isArray(data) ? data : (data.rows || []);
+      return rows.map((r: any) => this.explorerTxFromDb(r));
+    }
+    if (error && !this.isMissingFunction(error)) throw new Error(error.message);
+
+    let q = sb
+      .from('transactions')
+      .select(EXPLORER_TX_COLUMNS)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (type !== 'all') q = q.eq('tx_type', type);
+    q = this.applyStatusFilter(q, status);
+    const { data: rows, error: readErr } = await q;
+    if (readErr) throw new Error(readErr.message);
+    return (rows || []).map((r: any) => this.explorerTxFromDb(r));
+  }
+
+  async explorerStats(): Promise<ExplorerStats> {
+    const sb = this.assertSupabase();
+    const { data, error } = await sb.rpc('rpc_explorer_stats');
+    if (!error && data) {
+      return {
+        total: Number(data.total ?? 0),
+        completed: Number(data.completed ?? 0),
+        pending: Number(data.pending ?? 0),
+        failed: Number(data.failed ?? 0),
+        wallets: data.wallets != null ? Number(data.wallets) : null,
+        indexed: true,
+        firstTimestamp: data.first_created_at ? new Date(data.first_created_at).getTime() : null,
+        lastTimestamp: data.last_created_at ? new Date(data.last_created_at).getTime() : null
+      };
+    }
+    if (error && !this.isMissingFunction(error)) throw new Error(error.message);
+
+    // Fallback: exact counts straight from the ledger (read-only).
+    const count = async (apply: (q: any) => any): Promise<number> => {
+      const res = await apply(sb.from('transactions').select('id', { count: 'exact', head: true }));
+      if (res.error) throw new Error(res.error.message);
+      return Number(res.count ?? 0);
+    };
+    const total = await count(q => q);
+    const completed = await count(q => q.or('status.eq.Completed,status.eq.Complete'));
+    const pending = await count(q => q.eq('status', 'Pending'));
+    const failed = await count(q => q.eq('status', 'Failed'));
+    return {
+      total, completed, pending, failed, wallets: null, indexed: false,
+      firstTimestamp: null, lastTimestamp: null
+    };
+  }
+
+  // Every ledger row written for one transaction hash (a transfer writes two).
+  async explorerTxLegs(hash: string): Promise<ExplorerTransaction[]> {
+    const clean = sanitizeExplorerQuery(hash);
+    if (!clean) return [];
+    const sb = this.assertSupabase();
+
+    const { data, error } = await sb.rpc('rpc_explorer_tx', { p_hash: clean });
+    if (!error && data) {
+      const rows = Array.isArray(data) ? data : (data.rows || []);
+      if (rows.length) return rows.map((r: any) => this.explorerTxFromDb(r));
+    }
+    if (error && !this.isMissingFunction(error)) throw new Error(error.message);
+
+    const exact = await sb
+      .from('transactions')
+      .select(EXPLORER_TX_COLUMNS)
+      .eq('tx_hash', clean)
+      .order('created_at', { ascending: true })
+      .limit(20);
+    if (exact.error) throw new Error(exact.error.message);
+    if ((exact.data || []).length) return (exact.data || []).map((r: any) => this.explorerTxFromDb(r));
+
+    const loose = await sb
+      .from('transactions')
+      .select(EXPLORER_TX_COLUMNS)
+      .ilike('tx_hash', clean)
+      .order('created_at', { ascending: true })
+      .limit(20);
+    if (loose.error) throw new Error(loose.error.message);
+    return (loose.data || []).map((r: any) => this.explorerTxFromDb(r));
+  }
+
+  // Everything the ledger knows about one wallet address.
+  async explorerAddressActivity(
+    address: string,
+    opts: { limit?: number; offset?: number } = {}
+  ): Promise<ExplorerAddressActivity> {
+    const clean = sanitizeExplorerQuery(address);
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    const offset = Math.max(opts.offset ?? 0, 0);
+    if (!clean) return { address: clean, rows: [], indexed: false, total: null };
+    const sb = this.assertSupabase();
+
+    const { data, error } = await sb.rpc('rpc_explorer_address', {
+      p_address: clean, p_limit: limit, p_offset: offset
+    });
+    if (!error && data) {
+      const rows = Array.isArray(data) ? data : (data.rows || []);
+      return {
+        address: clean,
+        rows: rows.map((r: any) => this.explorerTxFromDb(r)),
+        indexed: true,
+        total: data.total != null ? Number(data.total) : rows.length
+      };
+    }
+    if (error && !this.isMissingFunction(error)) throw new Error(error.message);
+
+    // Fallback without the index: a transfer writes TWO ledger rows sharing one
+    // tx_hash, so rows where this address is the counterparty give us the
+    // hashes, and the sibling rows of those hashes are the own legs of the
+    // address being searched.
+    const { data: legs, error: legErr } = await sb
+      .from('transactions')
+      .select(EXPLORER_TX_COLUMNS)
+      .ilike('counterparty', `%${clean}%`)
+      .order('created_at', { ascending: false })
+      .limit(150);
+    if (legErr) throw new Error(legErr.message);
+
+    const hashes = Array.from(new Set((legs || []).map((r: any) => r.tx_hash).filter(Boolean)));
+    let siblings: any[] = [];
+    if (hashes.length) {
+      const { data: sib, error: sibErr } = await sb
+        .from('transactions')
+        .select(EXPLORER_TX_COLUMNS)
+        .in('tx_hash', hashes)
+        .limit(500);
+      if (sibErr) throw new Error(sibErr.message);
+      siblings = sib || [];
+    }
+
+    const seen = new Set<string>();
+    const merged = [...(legs || []), ...siblings]
+      .filter((r: any) => (seen.has(r.id) ? false : (seen.add(r.id), true)))
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(offset, offset + limit);
+
+    return {
+      address: clean,
+      rows: merged.map((r: any) => this.explorerTxFromDb(r)),
+      indexed: false,
+      total: null
+    };
+  }
+
+  // One search box: transaction hash first, then wallet address.
+  async explorerLookup(query: string): Promise<ExplorerLookup> {
+    const clean = sanitizeExplorerQuery(query);
+    if (!clean) return { kind: 'none' };
+    const sb = this.assertSupabase();
+
+    const legs = await this.explorerTxLegs(clean);
+    if (legs.length) return { kind: 'tx', hash: legs[0].txHash };
+    if (looksLikeAddress(clean)) return { kind: 'address', address: clean };
+
+    const { data, error } = await sb
+      .from('transactions')
+      .select('tx_hash,counterparty')
+      .or(`tx_hash.ilike.%${clean}%,counterparty.ilike.%${clean}%`)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (error) throw new Error(error.message);
+    const row: any = (data || [])[0];
+    if (!row) return { kind: 'none' };
+    if (looksLikeAddress(row.counterparty || '')) {
+      return { kind: 'address', address: sanitizeExplorerQuery(row.counterparty) };
+    }
+    return { kind: 'tx', hash: String(row.tx_hash) };
   }
 
   // --- 7. TASKS (server catalog + server-side claim) ---
